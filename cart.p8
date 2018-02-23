@@ -8,6 +8,7 @@ local next_player_num_ball_spawn
 local is_playing_game
 local camera_y
 local camera_vy
+local ball_speed
 
 local buttons
 local button_presses
@@ -16,9 +17,10 @@ local button_releases
 local players
 local balls
 local dropped_balls
+local ball_spawners
 
+local debug_mode=false
 local ball_colors={9,11,8,10,12}
-local ball_speed=0.5
 
 function _init()
 	scene_frame=0
@@ -27,18 +29,31 @@ function _init()
 	is_playing_game=false
 	camera_y=-128
 	camera_vy=0
+	ball_speed=0.5
 
 	-- initialize inputs
 	buttons={{},{}}
 	button_presses={{},{}}
 	button_releases={{},{}}
 
-	-- make the entities
+	-- reset the entities
 	players={}
 	balls={}
 	dropped_balls={{},{}}
+	ball_spawners={}
+
+	-- make the entities
 	create_player(1)
 	create_player(2)
+	create_ball_spawner(5,"left_hand",1,300)
+	create_ball_spawner(58,"right_hand",1,150)
+	create_ball_spawner(69,"left_hand",2,150)
+	create_ball_spawner(122,"right_hand",2,300)
+
+	if debug_mode then
+		is_playing_game=true
+		camera_y=0
+	end
 end
 
 -- local skip_frame=0
@@ -66,22 +81,27 @@ function _update()
 	end
 	-- gameplay code
 	if is_playing_game then
-		camera_vy=mid(-5,camera_vy+0.1,5)
+		-- camera_vy=mid(-4,camera_vy+0.1,4)
+		camera_vy+=0.1
 		camera_y+=camera_vy
 		if camera_y>0 then
 			camera_y=0
-			camera_vy=-0.4*camera_vy
+			camera_vy=-0.25*camera_vy
 		end
 		frames_since_ball_spawn=increment_counter(frames_since_ball_spawn)
 		-- spawn a ball every so often
-		if frames_since_ball_spawn>150 then
-			frames_since_ball_spawn=0
-			spawn_whirly_ball(next_player_num_ball_spawn)
-			next_player_num_ball_spawn=3-next_player_num_ball_spawn
-		end
+		-- if frames_since_ball_spawn>150 then
+		-- 	frames_since_ball_spawn=0
+		-- 	next_player_num_ball_spawn=3-next_player_num_ball_spawn
+		-- end
 		-- the balls speed up over time
 		if scene_frame%30==0 then
 			ball_speed=min(ball_speed+0.01,1.25)
+		end
+		-- update all the ball spawners
+		local ball_spawner
+		for ball_spawner in all(ball_spawners) do
+			update_ball_spawner(ball_spawner)
 		end
 		-- update all the players
 		local player
@@ -129,6 +149,12 @@ function _draw()
 	pset(63,0,0)
 	pset(64,0,0)
 	pset(127,0,0)
+	-- draw all the ball spawners
+	local ball_spawner
+	for ball_spawner in all(ball_spawners) do
+		draw_ball_spawner(ball_spawner)
+		pal()
+	end
 	-- draw all the balls
 	local ball
 	for ball in all(balls) do
@@ -181,11 +207,6 @@ function create_player(player_num)
 		right_hand=nil,
 		most_recent_catch_hand=ternary(player_num==1,"right_hand","left_hand")
 	}
-	-- create a ball for the player to hold
-	local ball=create_ball(-20,-20,ternary(player_num==1,5,2))
-	player[player.most_recent_catch_hand]=ball
-	ball.held_by=player
-	ball.whirly_frames=0
 	-- add the player to the list of players
 	add(players,player)
 	return player
@@ -212,7 +233,6 @@ function update_player(self)
 			if not self.left_hand and ball.x==mid(self.x-9,ball.x,self.x) then
 				self.left_hand=ball
 				ball.held_by=self
-				ball.whirly_frames=0
 				self.most_recent_catch_hand="left_hand"
 				self.pose="catch"
 				self.pose_flipped=true
@@ -220,7 +240,6 @@ function update_player(self)
 			elseif not self.right_hand and ball.x==mid(self.x,ball.x,self.x+9) then
 				self.right_hand=ball
 				ball.held_by=self
-				ball.whirly_frames=0
 				self.most_recent_catch_hand="right_hand"
 				self.pose="catch"
 				self.pose_flipped=false
@@ -228,12 +247,6 @@ function update_player(self)
 			end
 		end
 	end
-	-- update pose
-	-- if self.vx==0 then
-	-- 	self.pose=ternary(scene_frame%40<20,"wiggle_left","wiggle_right")
-	-- else
-	-- 	self.pose=ternary(scene_frame%10<5,"wiggle_left","wiggle_right")
-	-- end
 	-- update held balls x-positions
 	if self.left_hand then
 		self.left_hand.x=self.x-7
@@ -318,8 +331,6 @@ function create_ball(x,y,color_index)
 		color_index=color_index,
 		ball_speed=ball_speed,
 		held_by=nil,
-		is_whirling=true,
-		whirly_frames=300,
 		catchable_by_player_num=nil
 	}
 	-- add the ball to the list of balls
@@ -328,21 +339,10 @@ function create_ball(x,y,color_index)
 end
 
 function update_ball(self)
-	-- self.whirly_frames=(self.whirly_frames+1)%6
-	self.whirly_frames=max(0,self.whirly_frames-1)
 	if not self.held_by then
 		self.vy+=0.15*self.ball_speed*self.ball_speed
-		if self.whirly_frames>0 then
-			self.vy=min(0.5,self.vy)
-		end
 		self.x+=self.vx
 		self.y+=self.vy
-	end
-	if self.whirly_frames>0 then
-		self.y=min(107,self.y)
-		if self.whirly_frames%10==0 then
-			self.color_index=1+self.color_index%#ball_colors
-		end
 	end
 	if self.y>115 then
 		del(balls,self)
@@ -351,21 +351,64 @@ function update_ball(self)
 end
 
 function draw_ball(self)
-	-- rect(self.x-1.5,self.y-1.5,self.x+2.5,self.y+2.5,0)
-	-- pset(self.x+0.5,self.y+0.5,1)
 	pal(8,ball_colors[self.color_index])
 	spr(0,self.x-2.5,self.y-2.5)
-	if self.whirly_frames>50 or self.whirly_frames%2>0 then
-		pal(1,0)
-		spr(2+flr((self.whirly_frames%6)/2),self.x-3.5,self.y-6.5)
-		spr(5,self.x-3.5,self.y-0.5)
-	end
-	-- print(self.y,self.x+6,self.y,7)
 end
 
-function spawn_whirly_ball(player_num)
-	local ball=create_ball(ternary(player_num==1,rnd_int(12,51),rnd_int(76,115)),-3,rnd_int(1,#ball_colors))
-	ball.catchable_by_player_num=player_num
+
+-- ball spawner methods
+function create_ball_spawner(x,hand,player_num,frames_to_spawn)
+	local ball_spawner={
+		x=x,
+		y=120,
+		hand=hand,
+		player_num=player_num,
+		color_index=rnd_int(1,#ball_colors),
+		color_change_frames=0,
+		frames_to_spawn=frames_to_spawn,
+		anim="fall"
+	}
+	add(ball_spawners,ball_spawner)
+	return ball_spawner
+end
+
+function update_ball_spawner(self)
+	if self.anim=="fall" then
+		self.frames_to_spawn-=1
+		if self.frames_to_spawn<=0 then
+			self.anim="rise"
+		end
+	end
+	self.color_change_frames+=1
+	if self.color_change_frames>2 then
+		self.color_change_frames=0
+		self.color_index=1+self.color_index%#ball_colors
+	end
+	-- see if the player grabs the ball
+	local player=players[self.player_num]
+	if abs(player.x-self.x)<8 and not player[self.hand] and self.anim!="fall" and self.y<=113 then
+		local ball=create_ball(self.x,self.y,self.color_index)
+		ball.held_by=player
+		player[self.hand]=ball
+		player.most_recent_catch_hand=self.hand
+		self.anim="fall"
+		self.frames_to_spawn=300
+	end
+	-- animate in an out of the ground
+	if self.anim=="fall" then
+		self.y=mid(113,self.y+0.05,120)
+	end
+	if self.anim=="rise" then
+		self.y=mid(113,self.y-0.25,120)
+	end
+end
+
+function draw_ball_spawner(self)
+	pal(1,0)
+	pal(8,ball_colors[self.color_index])
+	palt(8,self.anim=="fall")
+	spr(2,self.x-3.5,self.y-6.5)
+	rectfill(self.x-1.5,114.5,self.x+2.5,117.5,0)
 end
 
 
@@ -385,14 +428,14 @@ function rnd_int(min_val,max_val)
 end
 
 __gfx__
-00000000000000000111000000111111000000000100000100000000000000002222222222222222222222222222222222222222222222222222222200000123
-00888000001110000011100000001110011101110100000105505500110011102222222222222222222222222222222222222222222222222222222200004567
-088888000100010000001110001110001100100001000001555555500110111122222222222222222222222222222222222222222222222222222222000089ab
-0888880001000100000011110111111000001000001000105555555001111110222222222222222222222222222222222222222222222222222222220000cdef
-08888800010001000001110000011100000111000001110005555500101111102222222222222222222222222222222222222222222222222222222200000000
-00888000001110000010001000100010001000100000000000555000011111102222222222222222222222222222222222222222222222222222222200000000
-00000000000000000000000000000000000000000000000000050000001111002222222222222222222222222222222222222222222222222222222200000000
-00000000000000000000000000000000000000000000000000000000000000002222222222222222222222222222222222222222222222222222222200000000
+00000000000000000008880022222222222222222222222200000000000000002222222222222222222222222222222222222222222222222222222200000123
+00888000001110000088888022222222222222222222222205505500110011102222222222222222222222222222222222222222222222222222222200004567
+088888000100010000888880222222222222222222222222555555500110111122222222222222222222222222222222222222222222222222222222000089ab
+0888880001000100008888802222222222222222222222225555555001111110222222222222222222222222222222222222222222222222222222220000cdef
+08888800010001000018881022222222222222222222222205555500101111102222222222222222222222222222222222222222222222222222222200000000
+00888000001110000011111022222222222222222222222200555000011111102222222222222222222222222222222222222222222222222222222200000000
+00000000000000000001110022222222222222222222222200050000001111002222222222222222222222222222222222222222222222222222222200000000
+00000000000000000001110022222222222222222222222200000000000000002222222222222222222222222222222222222222222222222222222200000000
 000000000000000000000000000000000000008888000000000000000000000000000000000000000000000000000000000000ccc00000000000000000000022
 00000001111000000000000000000000000888888880000000000000000000000000000000000000000000000000000000000ccccc0000000000000000000022
 00000001111000000000000000000000888888888880000000000000000000000000000000000000000000000000000000000ccccc0000000000000000000022
