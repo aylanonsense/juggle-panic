@@ -12,6 +12,8 @@ local players
 local balls
 local dropped_balls
 
+local ball_colors={9,11,13,8,10,12}
+
 function _init()
 	scene_frame=0
 
@@ -26,6 +28,9 @@ function _init()
 	dropped_balls={{},{}}
 	create_player(1)
 	create_player(2)
+	local player_num=rnd_int(1,2)
+	local ball=create_ball(ternary(player_num==1,rnd_int(12,51),rnd_int(76,115)),-3,1)
+	ball.catchable_by_player_num=player_num
 end
 
 -- local skip_frame=0
@@ -90,7 +95,7 @@ function _draw()
 	for i=1,5 do
 		spr(1,12+6*i,118)
 		if dropped_balls[1][i] then
-			pal(8,dropped_balls[1][i].color)
+			pal(8,ball_colors[dropped_balls[1][i].color_index])
 			spr(0,12+6*i,118)
 			pal()
 		end
@@ -98,7 +103,7 @@ function _draw()
 	for i=1,5 do
 		spr(1,73+6*i,118)
 		if dropped_balls[2][i] then
-			pal(8,dropped_balls[2][i].color)
+			pal(8,ball_colors[dropped_balls[2][i].color_index])
 			spr(0,73+6*i,118)
 			pal()
 		end
@@ -125,9 +130,10 @@ function create_player(player_num)
 		most_recent_catch_hand=ternary(player_num==1,"right_hand","left_hand")
 	}
 	-- create a ball for the player to hold
-	local ball=create_ball(ternary(player_num==1,10,11))
+	local ball=create_ball(-20,-20,ternary(player_num==1,6,2))
 	player[player.most_recent_catch_hand]=ball
 	ball.held_by=player
+	ball.whirly_frames=0
 	-- add the player to the list of players
 	add(players,player)
 	return player
@@ -154,6 +160,7 @@ function update_player(self)
 			if not self.left_hand and ball.x==mid(self.x-9,ball.x,self.x) then
 				self.left_hand=ball
 				ball.held_by=self
+				ball.whirly_frames=0
 				self.most_recent_catch_hand="left_hand"
 				self.pose="catch"
 				self.pose_flipped=true
@@ -161,6 +168,7 @@ function update_player(self)
 			elseif not self.right_hand and ball.x==mid(self.x,ball.x,self.x+9) then
 				self.right_hand=ball
 				ball.held_by=self
+				ball.whirly_frames=0
 				self.most_recent_catch_hand="right_hand"
 				self.pose="catch"
 				self.pose_flipped=false
@@ -234,7 +242,7 @@ end
 function draw_player(self)
 	-- rect(self.x-8.5,self.y+0.5,self.x+8.5,self.y+12.5,0)
 	-- pset(self.x+0.5,self.y+0.5,1)
-	-- pal(1,0)
+	pal(1,0)
 	local sy
 	if self.pose=="wiggle" then
 		sy=6
@@ -248,14 +256,16 @@ end
 
 
 -- ball methods
-function create_ball(color)
+function create_ball(x,y,color_index)
 	local ball={
-		x=50,
-		y=50,
+		x=x,
+		y=y,
 		vx=0,
 		vy=0,
-		color=color,
+		color_index=color_index,
 		held_by=nil,
+		is_whirling=true,
+		whirly_frames=280,
 		catchable_by_player_num=nil
 	}
 	-- add the ball to the list of balls
@@ -264,10 +274,21 @@ function create_ball(color)
 end
 
 function update_ball(self)
+	-- self.whirly_frames=(self.whirly_frames+1)%6
+	self.whirly_frames=max(0,self.whirly_frames-1)
 	if not self.held_by then
 		self.vy+=0.15
+		if self.whirly_frames>0 then
+			self.vy=min(0.5,self.vy)
+		end
 		self.x+=self.vx
 		self.y+=self.vy
+	end
+	if self.whirly_frames>0 then
+		self.y=min(107,self.y)
+		if self.whirly_frames%10==0 then
+			self.color_index=1+self.color_index%#ball_colors
+		end
 	end
 	if self.y>115 then
 		del(balls,self)
@@ -278,8 +299,12 @@ end
 function draw_ball(self)
 	-- rect(self.x-1.5,self.y-1.5,self.x+2.5,self.y+2.5,0)
 	-- pset(self.x+0.5,self.y+0.5,1)
-	pal(8,self.color)
+	pal(8,ball_colors[self.color_index])
 	spr(0,self.x-2.5,self.y-2.5)
+	if self.whirly_frames>50 or self.whirly_frames%2>0 then
+		pal(1,0)
+		spr(2+flr((self.whirly_frames%6)/2),self.x-3.5,self.y-6.5)
+	end
 	-- print(self.y,self.x+6,self.y,7)
 end
 
@@ -295,13 +320,17 @@ function increment_counter(n)
 	return n+ternary(n>32000,-12000,1)
 end
 
+function rnd_int(min_val,max_val)
+	return flr(min_val+rnd(1+max_val-min_val))
+end
+
 __gfx__
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00888000001110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-08888800010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-08888800010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-08888800010001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00888000001110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000111000000111111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888000001110000011100000001110011101110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08888800010001000000111000111000110010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08888800010001000000111101111110000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+08888800010001000001110000011100000111000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00888000001110000010001000100010001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
