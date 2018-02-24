@@ -21,6 +21,8 @@ local freeze_frames
 local frames_since_activity
 local frames_since_auto_spawn
 local next_player_spawn
+local game_mode
+local num_plays
 
 local buttons
 local button_presses
@@ -46,6 +48,7 @@ function _init()
 	screen_shake_frames=0
 	freeze_frames=0
 	title_balls={}
+	num_plays=0
 
 	-- initialize inputs
 	buttons={{},{}}
@@ -113,7 +116,7 @@ function _update()
 	if is_playing_game then
 		frames_since_activity=increment_counter(frames_since_activity)
 		frames_since_auto_spawn=increment_counter(frames_since_auto_spawn)
-		if scene_frame>150 and end_transition_frames<=0 then
+		if scene_frame>150 and end_transition_frames<=0 and game_mode!="cooperative" then
 			-- spawn balls if there are none
 			if #balls<=0 then
 				local something_done=false
@@ -181,7 +184,7 @@ function _update()
 				for p=1,2 do
 					local options
 					local text
-					if #dropped_balls[p]<5 then
+					if #dropped_balls[ternary(game_mode=="cooperative",1,p)]<5 then
 						text="win"
 					else
 						text="lose"
@@ -236,7 +239,7 @@ function _update()
 						if ball1.x<=ball2.x and ball1.vx>=0 and ball2.vx<=0 then
 							ball1.vx*=-1.7
 							ball2.vx*=-1.7
-							freeze_frames+=8
+							freeze_frames+=5
 							create_effect(9,92,17,17,ball2.x+dx/2-8,ball2.drawn_y+dy/2-8,3)
 							sfx(12,2)
 						end
@@ -262,6 +265,9 @@ function _update()
 		local effect
 		for effect in all(effects) do
 			update_effect(effect)
+		end
+		if game_mode=="cooperative" and scene_frame==1050 then
+			end_game()
 		end
 	end
 	-- shake the screen
@@ -302,9 +308,12 @@ function _draw()
 		rectfill(0,104,128,127,8)
 		rectfill(0,109,128,127,2)
 		rectfill(0,114,128,127,0)
+		if game_mode=="blackout" and scene_frame>120 then
+			rectfill(0,0,127,127,0)
+		end
 		-- draw controls
-		local n=mid(0,flr(scene_frame/2)-80,100)
-		pal(13,1)
+		local n=mid(6,flr(scene_frame/2)-80,100)
+		pal(13,0)
 		sspr(0,62,9,10,20-n,47) -- s key
 		sspr(9,62,9,10,31-n,47) -- f key
 		sspr(0,82,27,10,17-n,67) -- l-shift key
@@ -316,6 +325,11 @@ function _draw()
 		print("move",90+n,58,0)
 		print("toss",23-n,78,0)
 		print("toss",90+n,78,0)
+		if game_mode and is_playing_game and scene_frame<300 then
+			print("activated:",46,49-n,0)
+			print(game_mode,64-2*#game_mode,56-n,8)
+			print("mode",56,63-n,8)
+		end
 		-- draw the bounds of each player's side
 		pset(0,113,0)
 		pset(63,113,0)
@@ -357,46 +371,61 @@ function _draw()
 		end
 		rectfill(0,114,127,127,0)
 		-- draw score
-		if ball_speed_level<5 then
-			print("slow",56,119,1)
-		elseif ball_speed_level<10 then
-			print("fast",56,119,13)
-		elseif ball_speed_level<15 then
-			print("v.fast",52,119,12)
-		elseif ball_speed_level<20 then
-			print("2fast!",52,119,11)
-		elseif ball_speed_level<25 then
-			print("aahh!!",52,119,10)
-		elseif ball_speed_level<25 then
-			print("!!!!!!",52,119,9)
-		elseif ball_speed_level<30 then
-			print("nonono",52,119,8)
-		elseif ball_speed_level<35 then
-			print("max!",56,119,2)
-		elseif ball_speed_level<40 then
-			print("v.max!",52,119,14)
-		elseif ball_speed_level<45 then
-			print("2max!!",52,119,15)
-		else
-			print("gratz!",52,119,7)
-		end
-		local i
-		for i=1,5 do
-			if dropped_balls[1][i] then
-				pal(8,ball_colors[dropped_balls[1][i].color_index])
-				spr(3,8*i,118)
-				pal()
-			else
-				spr(1,8*i,118)
+		if game_mode=="cooperative" then
+			local i
+			for i=1,5 do
+				if dropped_balls[1][i] then
+					pal(8,ball_colors[dropped_balls[1][i].color_index])
+					spr(3,36+8*i,118)
+					pal()
+				else
+					spr(1,36+8*i,118)
+				end
 			end
-		end
-		for i=1,5 do
-			if dropped_balls[2][i] then
-				pal(8,ball_colors[dropped_balls[2][i].color_index])
-				spr(3,73+8*i,118)
-				pal()
+			local timer=mid(0,(35-flr(scene_frame/30)),35).." seconds left"
+			print(timer,64-2*#timer,13,12)
+		else
+			if ball_speed_level<5 then
+				print("slow",56,119,1)
+			elseif ball_speed_level<10 then
+				print("fast",56,119,13)
+			elseif ball_speed_level<15 then
+				print("v.fast",52,119,12)
+			elseif ball_speed_level<20 then
+				print("2fast!",52,119,11)
+			elseif ball_speed_level<25 then
+				print("aahh!!",52,119,10)
+			elseif ball_speed_level<25 then
+				print("!!!!!!",52,119,9)
+			elseif ball_speed_level<30 then
+				print("nonono",52,119,8)
+			elseif ball_speed_level<35 then
+				print("max!",56,119,2)
+			elseif ball_speed_level<40 then
+				print("v.max!",52,119,14)
+			elseif ball_speed_level<45 then
+				print("2max!!",52,119,15)
 			else
-				spr(1,73+8*i,118)
+				print("gratz!",52,119,7)
+			end
+			local i
+			for i=1,5 do
+				if dropped_balls[1][i] then
+					pal(8,ball_colors[dropped_balls[1][i].color_index])
+					spr(3,8*i,118)
+					pal()
+				else
+					spr(1,8*i,118)
+				end
+			end
+			for i=1,5 do
+				if dropped_balls[2][i] then
+					pal(8,ball_colors[dropped_balls[2][i].color_index])
+					spr(3,73+8*i,118)
+					pal()
+				else
+					spr(1,73+8*i,118)
+				end
 			end
 		end
 	end
@@ -427,6 +456,9 @@ function create_player(player_num)
 end
 
 function update_player(self)
+	if game_mode=="floaty" then
+		self.y=81+20*sin((scene_frame+ternary(self.player_num==1,0,50))/100)
+	end
 	local vx
 	if self.left_hand and self.right_hand then
 		vx=1
@@ -451,7 +483,7 @@ function update_player(self)
 	-- catch balls
 	local ball
 	for ball in all(balls) do
-		if not ball.held_by and ball.y>100 and ball.vy>0 then
+		if not ball.held_by and (game_mode!="floaty" and ball.y>100) or (game_mode=="floaty" and ball.y==mid(self.y-3,ball.y,self.y+10)) and ball.vy>0 then
 			if not self.left_hand and ball.x==mid(self.x-10,ball.x,self.x) then
 				sfx(10,1)
 				self.left_hand=ball
@@ -481,7 +513,7 @@ function update_player(self)
 		self.right_hand.x=self.x+6
 	end
 	-- throw balls
-	if button_presses[self.button_index][4] then
+	if button_presses[self.button_index][4] or game_mode=="hot potato" then
 		-- figure out which hand to throw with
 		local throwing_hand
 		if self.vx>0 and self.left_hand then
@@ -502,7 +534,7 @@ function update_player(self)
 		-- throw the ball
 		if throwing_hand then
 			local thrown_ball=self[throwing_hand]
-			thrown_ball.y=105
+			thrown_ball.y=self.y+4
 			thrown_ball.num_steps=3+ball_speed_level
 			thrown_ball.height_mult=mid(0.82,0.82+ball_speed_level/40,1.3)
 			-- move that ball
@@ -521,31 +553,36 @@ function update_player(self)
 					vx=0.15
 				end
 			end
+			if game_mode=="strong arm" then
+				vx*=5
+			end
 			thrown_ball.vx=vx*ternary(self.player_num==1,1,-1)
 			self[throwing_hand]=nil
 			thrown_ball.held_by=nil
 			self.pose="throw"
 			self.pose_flipped=(throwing_hand=="right_hand")
 			self.anim_frames=15
-			update_ball(thrown_ball)
+			update_ball(thrown_ball,true)
 			-- increase ball speed globally
-			ball_speed_level=min(ball_speed_level+1,100)
+			if game_mode!="cooperative" then
+				ball_speed_level=min(ball_speed_level+1,100)
+			end
 			sfx(2+mid(0,flr(ball_speed_level/5),3),1)
 		end
 	end
 	-- update held balls y-positions
 	if self.left_hand then
 		if self.pose=="catch" then
-			self.left_hand.y=ternary(self.pose_flipped,108,102)
+			self.left_hand.y=ternary(self.pose_flipped,self.y+7,self.y+1)
 		else
-			self.left_hand.y=ternary(self.pose_flipped,107,103)
+			self.left_hand.y=ternary(self.pose_flipped,self.y+6,self.y+2)
 		end
 	end
 	if self.right_hand then
 		if self.pose=="catch" then
-			self.right_hand.y=ternary(self.pose_flipped,102,108)
+			self.right_hand.y=ternary(self.pose_flipped,self.y+1,self.y+7)
 		else
-			self.right_hand.y=ternary(self.pose_flipped,103,107)
+			self.right_hand.y=ternary(self.pose_flipped,self.y+2,self.y+6)
 		end
 	end
 end
@@ -584,11 +621,11 @@ function create_ball(x,y,color_index)
 	return ball
 end
 
-function update_ball(self)
+function update_ball(self,force)
 	local vy=self.vy
-	if not self.held_by then
+	if not self.held_by and (game_mode!="step-by-step" or scene_frame%20==0 or force)  then
 		local i
-		for i=1,self.num_steps do
+		for i=1,ternary(game_mode=="step-by-step",8,1)*self.num_steps do
 			step_ball(self)
 		end
 	end
@@ -596,7 +633,7 @@ function update_ball(self)
 		sfx(6+mid(0,flr(ball_speed_level/5),3),1)
 	end
 	self.drawn_y=self.y
-	if self.drawn_y<100 then
+	if self.drawn_y<100 and game_mode!="floaty" then
 		self.drawn_y=self.height_mult*(self.drawn_y-100)+100
 	end
 end
@@ -604,7 +641,9 @@ end
 function step_ball(self)
 	local x=self.x
 	self.vy+=0.005
-	self.x+=self.vx
+	if self.y<116 then
+		self.x+=self.vx
+	end
 	self.y+=self.vy
 	if (self.x<64)!=(x<64) then
 		frames_since_activity=0
@@ -621,8 +660,13 @@ end
 
 function post_update_ball(self)
 	if self.y>115 then
-		del(balls,self)
-		add(dropped_balls[ternary(self.x<64,1,2)],self)
+		if game_mode=="bouncy ball" then
+			self.vy=-self.vy
+			self.y=115
+		else
+			del(balls,self)
+		end
+		add(dropped_balls[ternary(self.x<64 or game_mode=="cooperative",1,2)],self)
 		screen_shake_frames+=10
 		freeze_frames+=2
 		sfx(11,1)
@@ -700,7 +744,7 @@ function update_ball_spawner(self)
 	end
 	-- see if the player grabs the ball
 	local player=players[self.player_num]
-	if self.anim!="fall" and self.y<=113 then
+	if self.anim!="fall" and self.y<=113 and player.y>99 then
 		local hand
 		if player.x-self.x==mid(0,player.x-self.x,8) and not player.left_hand then
 			hand="left_hand"
@@ -715,6 +759,16 @@ function update_ball_spawner(self)
 			self.anim="fall"
 			player.pose="wiggle"
 			sfx(1,0)
+			if game_mode=="cooperative" then
+				self.frames_to_spawn=135
+			elseif game_mode=="infiniball" then
+				self.frames_to_spawn=20
+			end
+		elseif game_mode=="cooperative" then
+			local ball=create_ball(self.x,self.y,rnd_int(1,#ball_colors))
+			ball.vy=-0.92
+			self.anim="fall"
+			self.frames_to_spawn=135
 		end
 	end
 	-- animate in an out of the ground
@@ -732,6 +786,7 @@ function draw_ball_spawner(self)
 	palt(8,self.anim=="fall")
 	spr(2,self.x-3.5,self.y-6.5)
 	rectfill(self.x-1.5,114.5,self.x+2.5,117.5,0)
+	print(self.frames_to_spawn,self.x,self.y-20,7)
 end
 
 
@@ -789,6 +844,7 @@ end
 
 -- helper methods
 function reset_game()
+	num_plays+=1
 	is_playing_game=true
 	scene_frame=0
 	camera_vy=0
@@ -796,6 +852,14 @@ function reset_game()
 	frames_since_activity=-100
 	next_player_spawn=1
 	frames_since_auto_spawn=0
+	game_mode="cooperative"
+	-- game_mode="bouncy ball"
+	-- game_mode="step-by-step"
+	-- game_mode="infiniball"
+	-- game_mode="blackout"
+	-- game_mode="floaty"
+	-- game_mode="strong arm"
+	-- game_mode="hot potato"
 
 	-- reset the entities
 	players={}
