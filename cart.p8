@@ -13,9 +13,6 @@ todo
 	picking up a ball when you throw a ball doesn't make the ball look offset
 
 rule changes
-	after each throw, all balls get faster
-		speed increases after throws, specifically
-	reset the speed meter when there are no balls
 	add a speed meter
 	make the speed and arc better (higher arc, speed makes more sense)
 	hitbox feels solid
@@ -35,6 +32,7 @@ local end_transition_frames
 local screen_shake_frames
 local freeze_frames
 local frames_since_activity
+local frames_since_auto_spawn
 local next_player_spawn
 
 local buttons
@@ -70,7 +68,6 @@ function _init()
 	if debug_mode then
 		reset_game()
 		camera_y=0
-		ball_speed=1.75
 	end
 end
 
@@ -111,14 +108,18 @@ function _update()
 	-- gameplay code
 	if is_playing_game then
 		frames_since_activity=increment_counter(frames_since_activity)
+		frames_since_auto_spawn=increment_counter(frames_since_auto_spawn)
 		if scene_frame>150 and end_transition_frames<=0 then
 			-- spawn balls if there are none
 			if #balls<=0 then
+				ball_speed=max(0.7,ball_speed-0.5)
 				if ball_spawners[1].anim=="fall" then
 					ball_spawners[1].frames_to_spawn=1
+					frames_since_auto_spawn=0
 				end
 				if ball_spawners[2].anim=="fall" then
 					ball_spawners[2].frames_to_spawn=1
+					frames_since_auto_spawn=0
 				end
 				frames_since_activity=0
 			-- spawn balls if no plays are happening
@@ -137,19 +138,31 @@ function _update()
 					if ball_spawners[next_player_spawn].anim=="fall" then
 						ball_spawners[next_player_spawn].frames_to_spawn=1
 						frames_since_activity=0
+						frames_since_auto_spawn=0
 					end
 					next_player_spawn=3-next_player_spawn
 				elseif num_left_balls<num_right_balls then
 					if ball_spawners[1].anim=="fall" then
 						ball_spawners[1].frames_to_spawn=1
 						frames_since_activity=0
+						frames_since_auto_spawn=0
 					end
 				else
 					if ball_spawners[2].anim=="fall" then
 						ball_spawners[2].frames_to_spawn=1
 						frames_since_activity=0
+						frames_since_auto_spawn=0
 					end
 				end
+			end
+			-- just spawn a ball automatically every so often, for funsies
+			if frames_since_auto_spawn>=400 then
+				if ball_spawners[next_player_spawn].anim=="fall" then
+					ball_spawners[next_player_spawn].frames_to_spawn=1
+					frames_since_activity=0
+				end
+				next_player_spawn=3-next_player_spawn
+				frames_since_auto_spawn=0
 			end
 		end
 		-- ending code
@@ -190,10 +203,6 @@ function _update()
 		-- spawn a ball every so often
 		-- 	next_player_num_ball_spawn=3-next_player_num_ball_spawn
 		-- end
-		-- the balls speed up over time
-		if scene_frame%30==0 then
-			ball_speed=min(ball_speed+0.2,10)--1.75)
-		end
 		-- update all the ball spawners
 		local ball_spawner
 		for ball_spawner in all(ball_spawners) do
@@ -415,6 +424,8 @@ function update_player(self)
 		if throwing_hand then
 			local thrown_ball=self[throwing_hand]
 			thrown_ball.y=105
+			-- increase ball speed globally
+			ball_speed=min(ball_speed+0.2,10)
 			thrown_ball.ball_speed=ball_speed
 			thrown_ball.vy=-5*thrown_ball.ball_speed
 			thrown_ball.vx=ternary(self.player_num==1,1,-1)*thrown_ball.ball_speed
@@ -631,6 +642,7 @@ function reset_game()
 	ball_speed=0.5
 	frames_since_activity=-100
 	next_player_spawn=1
+	frames_since_auto_spawn=0
 
 	-- reset the entities
 	players={}
