@@ -3,15 +3,33 @@ version 16
 __lua__
 
 --[[
-
 todo
-	balls during title screen
-	credits after finishing a match
-	finish a game when reaching 5 dropped balls
 	sound effects
 	title screen music
 	stuff that floats past
-	randomize ball spawn location
+	effect when player catches a ball
+	effect when balls collide in mid-air
+	effect when ball hits the ground
+	picking up a ball when you throw a ball doesn't make the ball look offset
+
+rule changes
+	spawn 2 balls
+	after each throw, all balls get faster
+		speed increases after throws, specifically
+	if all the balls are being held on one side of the screen, spawn a ball on the opposite side
+		reset when a ball is thrown across the middle
+		reset when a ball hits the ground
+		it is just as fast
+	if all balls drop, spawn two new balls
+		reset the speed meter
+	add a speed meter
+	make the speed and arc better (higher arc, speed makes more sense)
+	hitbox feels solid
+	balls can collide in mid-air
+	moving while throwing a ball adjusts its horizontal velocity
+	balls can land on your own side
+	you prefer to throw with the opposite hand of movement
+	make hand hitboxes more generous
 ]]
 
 local scene_frame
@@ -21,6 +39,7 @@ local camera_vy
 local ball_speed
 local end_transition_frames
 local screen_shake_frames
+local freeze_frames=0
 
 local buttons
 local button_presses
@@ -28,14 +47,13 @@ local button_releases
 
 local players
 local balls
+local title_balls
 local dropped_balls
 local ball_spawners
 local floating_words
 
 local debug_mode=false
 local ball_colors={9,11,8,10,12}
-local win_text={"you won","you did it","winner","yay","nice job","woo!"}
-local lose_text={"you lost","you dropped the balls","im sorry","you did ok tho","nope"}
 
 function _init()
 	scene_frame=0
@@ -44,12 +62,15 @@ function _init()
 	camera_vy=0
 	end_transition_frames=0
 	screen_shake_frames=0
+	freeze_frames=0
+	title_balls={}
 
 	-- initialize inputs
 	buttons={{},{}}
 	button_presses={{},{}}
 	button_releases={{},{}}
 
+	-- skip to the game in debug mode
 	if debug_mode then
 		reset_game()
 		camera_y=0
@@ -61,8 +82,11 @@ end
 function _update()
 	-- skip_frame=(skip_frame+1)%10
 	-- if skip_frame>0 then return end
+	if freeze_frames>0 then
+		freeze_frames=max(0,freeze_frames-1)
+		return
+	end
 	-- increment counters
-	screen_shake_frames=max(0,screen_shake_frames-1)
 	scene_frame=increment_counter(scene_frame)
 	-- keep track of inputs (because btnp repeats presses)
 	local any_button_press=false
@@ -76,6 +100,14 @@ function _update()
 			any_button_press=any_button_press or button_presses[p][b]
 		end
 	end
+	-- update all the title-screen balls
+	if scene_frame%10==0 then
+		create_title_ball()
+	end
+	local title_ball
+	for title_ball in all(title_balls) do
+		update_title_ball(title_ball)
+	end
 	-- title screen code
 	if not is_playing_game and any_button_press then
 		reset_game()
@@ -85,7 +117,7 @@ function _update()
 		-- ending code
 		if end_transition_frames>0 then
 			end_transition_frames-=1
-			if end_transition_frames>200 or end_transition_frames==140 then
+			if end_transition_frames>145 or end_transition_frames==mid(115,end_transition_frames,125) or end_transition_frames==mid(100,end_transition_frames,105) then
 				for p=1,2 do
 					local options
 					local text
@@ -94,7 +126,7 @@ function _update()
 					else
 						text="lose"
 					end
-					create_floating_word(players[p].x,players[p].y+12,text,ternary(end_transition_frames==140,0,rnd_int(1,#ball_colors)))
+					create_floating_word(players[p].x,players[p].y+12,text,rnd_int(1,#ball_colors))
 				end
 			end
 			if end_transition_frames==1 then
@@ -102,15 +134,15 @@ function _update()
 				scene_frame=0
 			end
 		end
-		if (end_transition_frames>0 and end_transition_frames<120) or not is_playing_game then
-			camera_vy-=0.1
+		if (end_transition_frames>0 and end_transition_frames<50) or not is_playing_game then
+			camera_vy-=0.4
 			camera_y+=camera_vy
 			if camera_y<-128 then
 				camera_y=-128
 				camera_vy=-0.25*camera_vy
 			end
 		else
-			camera_vy+=0.1
+			camera_vy+=0.4
 			camera_y+=camera_vy
 			if camera_y>0 then
 				camera_y=0
@@ -122,7 +154,7 @@ function _update()
 		-- end
 		-- the balls speed up over time
 		if scene_frame%30==0 then
-			ball_speed=min(ball_speed+0.01,1.75)
+			ball_speed=min(ball_speed+0.2,10)--1.75)
 		end
 		-- update all the ball spawners
 		local ball_spawner
@@ -145,6 +177,8 @@ function _update()
 			update_floating_word(floating_word)
 		end
 	end
+	-- shake the screen
+	screen_shake_frames=mid(0,screen_shake_frames-1,17)
 end
 
 function _draw()
@@ -164,20 +198,25 @@ function _draw()
 			print("press any button to start",13,-23,5)
 		end
 	end
+	-- update all the title-screen balls
+	local title_ball
+	for title_ball in all(title_balls) do
+		draw_title_ball(title_ball)
+		pal()
+	end
 	if is_playing_game then
 		-- draw a beautiful rainbow sky
-		rectfill(0,0,128,26,1)
-		rectfill(0,27,128,37,13)
-		rectfill(0,38,128,65,12)
-		rectfill(0,66,128,83,11)
-		rectfill(0,66,128,83,11)
-		rectfill(0,84,128,96,10)
-		rectfill(0,97,128,106,9)
-		rectfill(0,97,128,106,9)
-		rectfill(0,107,128,113,8)
+		rectfill(0,0,128,127,1)
+		rectfill(0,31,128,127,13)
+		rectfill(0,39,128,127,12)
+		rectfill(0,66,128,127,11)
+		rectfill(0,85,128,127,10)
+		rectfill(0,96,128,127,9)
+		rectfill(0,104,128,127,8)
+		rectfill(0,109,128,127,2)
 		rectfill(0,114,128,127,0)
 		-- draw controls
-		local n=mid(0,flr(scene_frame/3)-100,100)
+		local n=mid(0,flr(scene_frame/2)-80,100)
 		pal(13,1)
 		sspr(0,62,9,10,20-n,47) -- s key
 		sspr(9,62,9,10,31-n,47) -- f key
@@ -296,6 +335,7 @@ function update_player(self)
 				self.pose="catch"
 				self.pose_flipped=true
 				self.anim_frames=15
+				freeze_frames+=1
 			elseif not self.right_hand and ball.x==mid(self.x,ball.x,self.x+9) then
 				self.right_hand=ball
 				ball.held_by=self
@@ -303,6 +343,7 @@ function update_player(self)
 				self.pose="catch"
 				self.pose_flipped=false
 				self.anim_frames=15
+				freeze_frames+=1
 			end
 		end
 	end
@@ -406,7 +447,8 @@ function update_ball(self)
 	if self.y>115 then
 		del(balls,self)
 		add(dropped_balls[self.catchable_by_player_num],self)
-		screen_shake_frames=min(screen_shake_frames+10,17)
+		screen_shake_frames+=10
+		freeze_frames+=2
 		if #dropped_balls[1]>=5 or #dropped_balls[2]>=5 then
 			end_game()
 		end
@@ -419,12 +461,42 @@ function draw_ball(self)
 end
 
 
+-- faux ball
+function create_title_ball()
+	local side=ternary(rnd()<0.5,-1,1)
+	local title_ball={
+		x=63+70*side,
+		y=-rnd_int(10,90),
+		vx=-2.5*side,
+		vy=-2.8-0.4*rnd(),
+		frames_to_death=300,
+		color_index=rnd_int(1,#ball_colors)
+	}
+	add(title_balls,title_ball)
+	return title_ball
+end
+
+function update_title_ball(self)
+	self.vy+=0.1
+	self.x+=self.vx
+	self.y+=self.vy
+	self.frames_to_death-=1
+	if self.frames_to_death<=0 then
+		del(title_balls,self)
+	end
+end
+
+function draw_title_ball(self)
+	pal(8,ball_colors[self.color_index])
+	spr(0,self.x-2.5,self.y-2.5)
+end
+
+
 -- ball spawner methods
-function create_ball_spawner(x,hand,player_num,frames_to_spawn)
+function create_ball_spawner(x,player_num,frames_to_spawn)
 	local ball_spawner={
 		x=x,
 		y=120,
-		hand=hand,
 		player_num=player_num,
 		color_index=rnd_int(1,#ball_colors),
 		color_change_frames=0,
@@ -437,9 +509,11 @@ end
 
 function update_ball_spawner(self)
 	if self.anim=="fall" then
-		self.frames_to_spawn-=1
-		if self.frames_to_spawn<=0 then
-			self.anim="rise"
+		if self.frames_to_spawn>0 then
+			self.frames_to_spawn-=1
+			if self.frames_to_spawn<=0 then
+				self.anim="rise"
+			end
 		end
 	end
 	self.color_change_frames+=1
@@ -449,13 +523,21 @@ function update_ball_spawner(self)
 	end
 	-- see if the player grabs the ball
 	local player=players[self.player_num]
-	if abs(player.x-self.x)<8 and not player[self.hand] and self.anim!="fall" and self.y<=113 then
-		local ball=create_ball(self.x,self.y,self.color_index)
-		ball.held_by=player
-		player[self.hand]=ball
-		player.most_recent_catch_hand=self.hand
-		self.anim="fall"
-		self.frames_to_spawn=300
+	if self.anim!="fall" and self.y<=113 then
+		local hand
+		if player.x-self.x==mid(0,player.x-self.x,8) and not player.left_hand then
+			hand="left_hand"
+		elseif self.x-player.x==mid(0,self.x-player.x,8) and not player.right_hand then
+			hand="right_hand"
+		end
+		if hand then
+			local ball=create_ball(self.x,self.y,self.color_index)
+			ball.held_by=player
+			player[hand]=ball
+			player.most_recent_catch_hand=hand
+			self.anim="fall"
+			self.frames_to_spawn=300
+		end
 	end
 	-- animate in an out of the ground
 	if self.anim=="fall" then
@@ -474,6 +556,10 @@ function draw_ball_spawner(self)
 	rectfill(self.x-1.5,114.5,self.x+2.5,117.5,0)
 end
 
+function set_spawn_frames(self,frames_to_spawn)
+	self.frames_to_spawn=frames_to_spawn
+end
+
 
 -- floating text methods
 function create_floating_word(x,y,text,color_index)
@@ -481,8 +567,8 @@ function create_floating_word(x,y,text,color_index)
 		x=x,
 		y=y,
 		text=text,
-		vx=rnd(0.8)-0.4,
-		vy=-4-rnd(2),--1.5-rnd(0.5),
+		vx=rnd(0.9)-0.45,
+		vy=-4.5-rnd(2.5),--1.5-rnd(0.5),
 		color_index=color_index
 	}
 	add(floating_words,floating_word)
@@ -490,7 +576,7 @@ function create_floating_word(x,y,text,color_index)
 end
 
 function update_floating_word(self)
-	self.vy+=0.15
+	self.vy+=0.2
 	self.x+=self.vx
 	self.y+=self.vy
 end
@@ -517,14 +603,12 @@ function reset_game()
 	-- make the entities
 	create_player(1)
 	create_player(2)
-	create_ball_spawner(5,"left_hand",1,325-ternary(debug_mode,150,0))
-	create_ball_spawner(58,"right_hand",1,100-ternary(debug_mode,150,0))
-	create_ball_spawner(69,"left_hand",2,100-ternary(debug_mode,150,0))
-	create_ball_spawner(122,"right_hand",2,325-ternary(debug_mode,150,0))
+	create_ball_spawner(32,1,100-ternary(debug_mode,99,0))
+	create_ball_spawner(95,2,100-ternary(debug_mode,99,0))
 end
 
 function end_game()
-	end_transition_frames=300
+	end_transition_frames=180
 	camera_vy=0
 	balls={}
 	ball_spawners={}
