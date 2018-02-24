@@ -2,13 +2,25 @@ pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
 
+--[[
+
+todo
+	balls during title screen
+	credits after finishing a match
+	finish a game when reaching 5 dropped balls
+	sound effects
+	title screen music
+	stuff that floats past
+	randomize ball spawn location
+]]
+
 local scene_frame
-local frames_since_ball_spawn
-local next_player_num_ball_spawn
 local is_playing_game
 local camera_y
 local camera_vy
 local ball_speed
+local end_transition_frames
+local screen_shake_frames
 
 local buttons
 local button_presses
@@ -18,41 +30,30 @@ local players
 local balls
 local dropped_balls
 local ball_spawners
+local floating_words
 
 local debug_mode=false
 local ball_colors={9,11,8,10,12}
+local win_text={"you won","you did it","winner","yay","nice job","woo!"}
+local lose_text={"you lost","you dropped the balls","im sorry","you did ok tho","nope"}
 
 function _init()
 	scene_frame=0
-	frames_since_ball_spawn=0
-	next_player_num_ball_spawn=rnd_int(1,2)
 	is_playing_game=false
 	camera_y=-128
 	camera_vy=0
-	ball_speed=0.5
+	end_transition_frames=0
+	screen_shake_frames=0
 
 	-- initialize inputs
 	buttons={{},{}}
 	button_presses={{},{}}
 	button_releases={{},{}}
 
-	-- reset the entities
-	players={}
-	balls={}
-	dropped_balls={{},{}}
-	ball_spawners={}
-
-	-- make the entities
-	create_player(1)
-	create_player(2)
-	create_ball_spawner(5,"left_hand",1,325-ternary(debug_mode,150,0))
-	create_ball_spawner(58,"right_hand",1,100-ternary(debug_mode,150,0))
-	create_ball_spawner(69,"left_hand",2,100-ternary(debug_mode,150,0))
-	create_ball_spawner(122,"right_hand",2,325-ternary(debug_mode,150,0))
-
 	if debug_mode then
-		is_playing_game=true
+		reset_game()
 		camera_y=0
+		ball_speed=1.75
 	end
 end
 
@@ -61,6 +62,7 @@ function _update()
 	-- skip_frame=(skip_frame+1)%10
 	-- if skip_frame>0 then return end
 	-- increment counters
+	screen_shake_frames=max(0,screen_shake_frames-1)
 	scene_frame=increment_counter(scene_frame)
 	-- keep track of inputs (because btnp repeats presses)
 	local any_button_press=false
@@ -76,22 +78,46 @@ function _update()
 	end
 	-- title screen code
 	if not is_playing_game and any_button_press then
-		is_playing_game=true
-		scene_frame=0
+		reset_game()
 	end
 	-- gameplay code
 	if is_playing_game then
-		-- camera_vy=mid(-4,camera_vy+0.1,4)
-		camera_vy+=0.1
-		camera_y+=camera_vy
-		if camera_y>0 then
-			camera_y=0
-			camera_vy=-0.25*camera_vy
+		-- ending code
+		if end_transition_frames>0 then
+			end_transition_frames-=1
+			if end_transition_frames>200 or end_transition_frames==140 then
+				for p=1,2 do
+					local options
+					local text
+					if #dropped_balls[p]<5 then
+						text="win"
+					else
+						text="lose"
+					end
+					create_floating_word(players[p].x,players[p].y+12,text,ternary(end_transition_frames==140,0,rnd_int(1,#ball_colors)))
+				end
+			end
+			if end_transition_frames==1 then
+				is_playing_game=false
+				scene_frame=0
+			end
 		end
-		frames_since_ball_spawn=increment_counter(frames_since_ball_spawn)
+		if (end_transition_frames>0 and end_transition_frames<120) or not is_playing_game then
+			camera_vy-=0.1
+			camera_y+=camera_vy
+			if camera_y<-128 then
+				camera_y=-128
+				camera_vy=-0.25*camera_vy
+			end
+		else
+			camera_vy+=0.1
+			camera_y+=camera_vy
+			if camera_y>0 then
+				camera_y=0
+				camera_vy=-0.25*camera_vy
+			end
+		end
 		-- spawn a ball every so often
-		-- if frames_since_ball_spawn>150 then
-		-- 	frames_since_ball_spawn=0
 		-- 	next_player_num_ball_spawn=3-next_player_num_ball_spawn
 		-- end
 		-- the balls speed up over time
@@ -113,95 +139,112 @@ function _update()
 		for ball in all(balls) do
 			update_ball(ball)
 		end
+		-- update all the floating words
+		local floating_word
+		for floating_word in all(floating_words) do
+			update_floating_word(floating_word)
+		end
 	end
 end
 
 function _draw()
+	local screen_shake_y=-ceil(screen_shake_frames/2)*sin(screen_shake_frames/2.1)--ternary(screen_shake_frames%2==0,1,-1)*min(3,flr(screen_shake_frames/3))
 	cls()
-	camera(0,camera_y)
+	camera(0,camera_y+screen_shake_y)
 	-- draw the title
 	sspr(18,8,108,71,10,-107)
-	-- print("created (with   ) by bridgs",9,-32,5)
-	-- spr(6,65,-34)
-	-- print("https://brid.gs",33,-24,1)
-	-- print("bridgs_dev",43,-16,1)
-	-- spr(7,33,-18)
 	if scene_frame%30<22 and not is_playing_game then
-		print("press any button to start",13,-23,5)
-	end
-	-- draw a beautiful rainbow sky
-	rectfill(0,0,128,26,1)
-	rectfill(0,27,128,37,13)
-	rectfill(0,38,128,65,12)
-	rectfill(0,66,128,83,11)
-	rectfill(0,66,128,83,11)
-	rectfill(0,84,128,96,10)
-	rectfill(0,97,128,106,9)
-	rectfill(0,97,128,106,9)
-	rectfill(0,107,128,113,8)
-	rectfill(0,114,128,127,0)
-	-- draw controls
-	local n=mid(0,flr(scene_frame/3)-100,100)
-	pal(13,1)
-	sspr(0,62,9,10,20-n,47) -- s key
-	sspr(9,62,9,10,31-n,47) -- f key
-	sspr(0,82,27,10,17-n,67) -- l-shift key
-	sspr(0,72,9,10,87+n,47) -- left arrow key
-	sspr(9,72,9,10,98+n,47) -- right arrow key
-	sspr(0,92,9,10,93+n,67) -- n key
-	pal()
-	print("move",23-n,58,0)
-	print("move",90+n,58,0)
-	print("toss",23-n,78,0)
-	print("toss",90+n,78,0)
-	-- draw the bounds of each player's side
-	pset(0,113,0)
-	pset(63,113,0)
-	pset(64,113,0)
-	pset(127,113,0)
-	pset(0,0,0)
-	-- pset(63,0,0)
-	-- pset(64,0,0)
-	pset(127,0,0)
-	-- draw all the ball spawners
-	local ball_spawner
-	for ball_spawner in all(ball_spawners) do
-		draw_ball_spawner(ball_spawner)
-		pal()
-	end
-	-- draw all the balls
-	local ball
-	for ball in all(balls) do
-		draw_ball(ball)
-		pal()
-	end
-	-- draw all the players
-	local player
-	for player in all(players) do
-		draw_player(player)
-		pal()
-	end
-	-- draw score
-	local i
-	for i=1,5 do
-		if dropped_balls[2][i] then
-			pal(8,ball_colors[dropped_balls[2][i].color_index])
-			spr(3,4+8*i,118)
-			pal()
+		if scene_frame<90 then
+			print("created (with   ) by bridgs",9,-32,5)
+			spr(6,65,-34)
+			print("https://brid.gs",33,-24,1)
+			print("bridgs_dev",43,-16,1)
+			spr(7,33,-18)
 		else
-			spr(1,4+8*i,118)
+			print("press any button to start",13,-23,5)
 		end
 	end
-	for i=1,5 do
-		if dropped_balls[1][i] then
-			pal(8,ball_colors[dropped_balls[1][i].color_index])
-			spr(3,69+8*i,118)
+	if is_playing_game then
+		-- draw a beautiful rainbow sky
+		rectfill(0,0,128,26,1)
+		rectfill(0,27,128,37,13)
+		rectfill(0,38,128,65,12)
+		rectfill(0,66,128,83,11)
+		rectfill(0,66,128,83,11)
+		rectfill(0,84,128,96,10)
+		rectfill(0,97,128,106,9)
+		rectfill(0,97,128,106,9)
+		rectfill(0,107,128,113,8)
+		rectfill(0,114,128,127,0)
+		-- draw controls
+		local n=mid(0,flr(scene_frame/3)-100,100)
+		pal(13,1)
+		sspr(0,62,9,10,20-n,47) -- s key
+		sspr(9,62,9,10,31-n,47) -- f key
+		sspr(0,82,27,10,17-n,67) -- l-shift key
+		sspr(0,72,9,10,87+n,47) -- left arrow key
+		sspr(9,72,9,10,98+n,47) -- right arrow key
+		sspr(0,92,9,10,93+n,67) -- n key
+		pal()
+		print("move",23-n,58,0)
+		print("move",90+n,58,0)
+		print("toss",23-n,78,0)
+		print("toss",90+n,78,0)
+		-- draw the bounds of each player's side
+		pset(0,113,0)
+		pset(63,113,0)
+		pset(64,113,0)
+		pset(127,113,0)
+		pset(0,0,0)
+		-- pset(63,0,0)
+		-- pset(64,0,0)
+		pset(127,0,0)
+		-- draw all the floating_words
+		local floating_word
+		for floating_word in all(floating_words) do
+			draw_floating_word(floating_word)
 			pal()
-		else
-			spr(1,69+8*i,118)
+		end
+		-- draw all the ball spawners
+		local ball_spawner
+		for ball_spawner in all(ball_spawners) do
+			draw_ball_spawner(ball_spawner)
+			pal()
+		end
+		-- draw all the balls
+		local ball
+		for ball in all(balls) do
+			draw_ball(ball)
+			pal()
+		end
+		-- draw all the players
+		local player
+		for player in all(players) do
+			draw_player(player)
+			pal()
+		end
+		rectfill(0,114,127,127,0)
+		-- draw score
+		local i
+		for i=1,5 do
+			if dropped_balls[1][i] then
+				pal(8,ball_colors[dropped_balls[1][i].color_index])
+				spr(3,4+8*i,118)
+				pal()
+			else
+				spr(1,4+8*i,118)
+			end
+		end
+		for i=1,5 do
+			if dropped_balls[2][i] then
+				pal(8,ball_colors[dropped_balls[2][i].color_index])
+				spr(3,69+8*i,118)
+				pal()
+			else
+				spr(1,69+8*i,118)
+			end
 		end
 	end
-	rectfill(0,114,127,117,0)
 end
 
 
@@ -362,7 +405,11 @@ function update_ball(self)
 	end
 	if self.y>115 then
 		del(balls,self)
-		add(dropped_balls[3-self.catchable_by_player_num],self)
+		add(dropped_balls[self.catchable_by_player_num],self)
+		screen_shake_frames=min(screen_shake_frames+10,17)
+		if #dropped_balls[1]>=5 or #dropped_balls[2]>=5 then
+			end_game()
+		end
 	end
 end
 
@@ -428,7 +475,66 @@ function draw_ball_spawner(self)
 end
 
 
+-- floating text methods
+function create_floating_word(x,y,text,color_index)
+	local floating_word={
+		x=x,
+		y=y,
+		text=text,
+		vx=rnd(0.8)-0.4,
+		vy=-4-rnd(2),--1.5-rnd(0.5),
+		color_index=color_index
+	}
+	add(floating_words,floating_word)
+	return floating_word
+end
+
+function update_floating_word(self)
+	self.vy+=0.15
+	self.x+=self.vx
+	self.y+=self.vy
+end
+
+function draw_floating_word(self)
+	print(self.text,self.x-2*#self.text,self.y,ball_colors[self.color_index])
+end
+
+
 -- helper methods
+function reset_game()
+	is_playing_game=true
+	scene_frame=0
+	camera_vy=0
+	ball_speed=0.5
+
+	-- reset the entities
+	players={}
+	balls={}
+	dropped_balls={{},{}}
+	ball_spawners={}
+	floating_words={}
+
+	-- make the entities
+	create_player(1)
+	create_player(2)
+	create_ball_spawner(5,"left_hand",1,325-ternary(debug_mode,150,0))
+	create_ball_spawner(58,"right_hand",1,100-ternary(debug_mode,150,0))
+	create_ball_spawner(69,"left_hand",2,100-ternary(debug_mode,150,0))
+	create_ball_spawner(122,"right_hand",2,325-ternary(debug_mode,150,0))
+end
+
+function end_game()
+	end_transition_frames=300
+	camera_vy=0
+	balls={}
+	ball_spawners={}
+	local p
+	for p=1,2 do
+		players[p].left_hand=nil
+		players[p].right_hand=nil
+	end
+end
+
 -- if condition is true return the second argument, otherwise the third
 function ternary(condition,if_true,if_false)
 	return condition and if_true or if_false
