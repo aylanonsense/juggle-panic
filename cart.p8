@@ -9,9 +9,6 @@ todo
 	stuff that floats past
 	effect when player catches a ball
 	effect when ball hits the ground
-
-rule changes
-	add a speed meter
 ]]
 
 local scene_frame
@@ -38,7 +35,7 @@ local ball_spawners
 local floating_words
 local effects
 
-local debug_mode=false
+local debug_mode=true
 local ball_colors={9,11,8,10,12}
 
 function _init()
@@ -104,14 +101,19 @@ function _update()
 		if scene_frame>150 and end_transition_frames<=0 then
 			-- spawn balls if there are none
 			if #balls<=0 then
-				ball_speed_level=max(1,flr(ball_speed_level/1.1))
+				local something_done=false
 				if ball_spawners[1].anim=="fall" then
 					ball_spawners[1].frames_to_spawn=1
 					frames_since_auto_spawn=0
+					something_done=true
 				end
 				if ball_spawners[2].anim=="fall" then
 					ball_spawners[2].frames_to_spawn=1
 					frames_since_auto_spawn=0
+					something_done=true
+				end
+				if something_done then
+					ball_speed_level=max(1,flr(ball_speed_level/3))
 				end
 				frames_since_activity=0
 			-- spawn balls if no plays are happening
@@ -339,23 +341,46 @@ function _draw()
 		end
 		rectfill(0,114,127,127,0)
 		-- draw score
+		if ball_speed_level<5 then
+			print("slow",56,119,1)
+		elseif ball_speed_level<10 then
+			print("fast",56,119,13)
+		elseif ball_speed_level<15 then
+			print("v.fast",52,119,12)
+		elseif ball_speed_level<20 then
+			print("2fast!",52,119,11)
+		elseif ball_speed_level<25 then
+			print("aahh!!",52,119,10)
+		elseif ball_speed_level<25 then
+			print("!!!!!!",52,119,9)
+		elseif ball_speed_level<30 then
+			print("nonono",52,119,8)
+		elseif ball_speed_level<35 then
+			print("max!",56,119,2)
+		elseif ball_speed_level<40 then
+			print("v.max!",52,119,14)
+		elseif ball_speed_level<45 then
+			print("2max!!",52,119,15)
+		else
+			print("gratz!",52,119,7)
+		end
 		local i
 		for i=1,5 do
 			if dropped_balls[1][i] then
 				pal(8,ball_colors[dropped_balls[1][i].color_index])
-				spr(3,4+8*i,118)
+				spr(3,8*i,118)
 				pal()
 			else
-				spr(1,4+8*i,118)
+				spr(1,8*i,118)
 			end
 		end
 		for i=1,5 do
 			if dropped_balls[2][i] then
 				pal(8,ball_colors[dropped_balls[2][i].color_index])
-				spr(3,69+8*i,118)
+				spr(3,73+8*i,118)
 				pal()
 			else
-				spr(1,69+8*i,118)
+				spr(1,73+8*i,118)
 			end
 		end
 	end
