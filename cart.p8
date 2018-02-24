@@ -13,15 +13,9 @@ todo
 	picking up a ball when you throw a ball doesn't make the ball look offset
 
 rule changes
-	spawn 2 balls
 	after each throw, all balls get faster
 		speed increases after throws, specifically
-	if all the balls are being held on one side of the screen, spawn a ball on the opposite side
-		reset when a ball is thrown across the middle
-		reset when a ball hits the ground
-		it is just as fast
-	if all balls drop, spawn two new balls
-		reset the speed meter
+	reset the speed meter when there are no balls
 	add a speed meter
 	make the speed and arc better (higher arc, speed makes more sense)
 	hitbox feels solid
@@ -39,7 +33,9 @@ local camera_vy
 local ball_speed
 local end_transition_frames
 local screen_shake_frames
-local freeze_frames=0
+local freeze_frames
+local frames_since_activity
+local next_player_spawn
 
 local buttons
 local button_presses
@@ -114,10 +110,52 @@ function _update()
 	end
 	-- gameplay code
 	if is_playing_game then
+		frames_since_activity=increment_counter(frames_since_activity)
+		if scene_frame>150 and end_transition_frames<=0 then
+			-- spawn balls if there are none
+			if #balls<=0 then
+				if ball_spawners[1].anim=="fall" then
+					ball_spawners[1].frames_to_spawn=1
+				end
+				if ball_spawners[2].anim=="fall" then
+					ball_spawners[2].frames_to_spawn=1
+				end
+				frames_since_activity=0
+			-- spawn balls if no plays are happening
+			elseif frames_since_activity>160 then
+				local num_left_balls=0
+				local num_right_balls=0
+				local ball
+				for ball in all(balls) do
+					if ball.x<64 then
+						num_left_balls+=1
+					else
+						num_right_balls+=1
+					end
+				end
+				if num_left_balls==num_right_balls then
+					if ball_spawners[next_player_spawn].anim=="fall" then
+						ball_spawners[next_player_spawn].frames_to_spawn=1
+						frames_since_activity=0
+					end
+					next_player_spawn=3-next_player_spawn
+				elseif num_left_balls<num_right_balls then
+					if ball_spawners[1].anim=="fall" then
+						ball_spawners[1].frames_to_spawn=1
+						frames_since_activity=0
+					end
+				else
+					if ball_spawners[2].anim=="fall" then
+						ball_spawners[2].frames_to_spawn=1
+						frames_since_activity=0
+					end
+				end
+			end
+		end
 		-- ending code
 		if end_transition_frames>0 then
 			end_transition_frames-=1
-			if end_transition_frames>145 or end_transition_frames==mid(115,end_transition_frames,125) or end_transition_frames==mid(100,end_transition_frames,105) then
+			if end_transition_frames>150 or end_transition_frames==mid(120,end_transition_frames,130) or end_transition_frames==mid(105,end_transition_frames,110) then
 				for p=1,2 do
 					local options
 					local text
@@ -439,10 +477,14 @@ function create_ball(x,y,color_index)
 end
 
 function update_ball(self)
+	local x=self.x
 	if not self.held_by then
 		self.vy+=0.15*self.ball_speed*self.ball_speed
 		self.x+=self.vx
 		self.y+=self.vy
+		if (self.x<64)!=(x<64) then
+			frames_since_activity=0
+		end
 	end
 	if self.y>115 then
 		del(balls,self)
@@ -536,15 +578,14 @@ function update_ball_spawner(self)
 			player[hand]=ball
 			player.most_recent_catch_hand=hand
 			self.anim="fall"
-			self.frames_to_spawn=300
 		end
 	end
 	-- animate in an out of the ground
 	if self.anim=="fall" then
-		self.y=mid(113,self.y+0.05,120)
+		self.y=mid(113,self.y+0.15,120)
 	end
 	if self.anim=="rise" then
-		self.y=mid(113,self.y-0.25,120)
+		self.y=mid(113,self.y-0.15,120)
 	end
 end
 
@@ -554,10 +595,6 @@ function draw_ball_spawner(self)
 	palt(8,self.anim=="fall")
 	spr(2,self.x-3.5,self.y-6.5)
 	rectfill(self.x-1.5,114.5,self.x+2.5,117.5,0)
-end
-
-function set_spawn_frames(self,frames_to_spawn)
-	self.frames_to_spawn=frames_to_spawn
 end
 
 
@@ -592,6 +629,8 @@ function reset_game()
 	scene_frame=0
 	camera_vy=0
 	ball_speed=0.5
+	frames_since_activity=-100
+	next_player_spawn=1
 
 	-- reset the entities
 	players={}
@@ -608,7 +647,7 @@ function reset_game()
 end
 
 function end_game()
-	end_transition_frames=180
+	end_transition_frames=190
 	camera_vy=0
 	balls={}
 	ball_spawners={}
