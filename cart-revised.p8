@@ -70,7 +70,7 @@ function _init()
 	spawn_entity("juggler",80,90,{
 		player_num=0
 	})
-	local ball=spawn_entity("ball",64,100)
+	local ball=spawn_entity("ball",84,88)
 	ball:throw(30,80,100)
 end
 
@@ -85,7 +85,20 @@ function _update()
 		if not skip_apply_velocity then
 			entity:apply_velocity()
 		end
+		if decrement_counter_prop(entity,"frames_to_death") then
+			entity:die()
+		end
 	end
+
+	-- filter out dead entities
+	filter(entities,function(entity)
+		return entity.is_alive
+	end)
+
+	-- sort entities for rendering
+	sort(entities,function(entity1,entity2)
+		return entity1.render_layer>entity2.render_layer
+	end)
 end
 
 function _draw()
@@ -107,9 +120,10 @@ function spawn_entity(class_name,x,y,args,skip_init)
 	else
 		-- create default entity
 		entity={
+			is_alive=true,
 			frames_alive=0,
 			frames_to_death=0,
-			render_layer=5,
+			render_layer=0,
 			x=x or 0,
 			y=y or 0,
 			vx=0,
@@ -163,6 +177,53 @@ end
 function parabola(percent,distance,height)
 	return percent*distance,-height+(2*percent-1)*(2*percent-1)*height
 end
+
+-- increment a counter, wrapping to 20000 if it risks overflowing
+function increment_counter(n)
+	return n+ternary(n>32000,-12000,1)
+end
+
+-- increment_counter on a property of an object
+function increment_counter_prop(obj,k)
+	obj[k]=increment_counter(obj[k])
+end
+
+-- decrement a counter but not below 0
+function decrement_counter(n)
+	return max(0,n-1)
+end
+
+-- decrement_counter on a property of an object, returns true when it reaches 0
+function decrement_counter_prop(obj,k)
+	if obj[k]>0 then
+		obj[k]=decrement_counter(obj[k])
+		return obj[k]<=0
+	end
+end
+
+-- filter out anything in list for which func(item) is false
+function filter(list,func)
+	local item
+	for item in all(list) do
+		if not func(item) then
+			del(list,item)
+		end
+	end
+end
+
+-- bubble sorts a list according to a comparison func
+function sort(list,func)
+	local i
+	for i=1,#list do
+		local j=i
+		while j>1 and func(list[j-1],list[j]) do
+			list[j],list[j-1]=list[j-1],list[j]
+			j-=1
+		end
+	end
+end
+
+
 
 
 
