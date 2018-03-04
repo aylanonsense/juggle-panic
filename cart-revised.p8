@@ -5,6 +5,7 @@ __lua__
 function noop() end
 
 local catch_fudge=1
+local ground_y=110
 
 -- what to do next
 -- - jugglers can catch and throw balls
@@ -13,7 +14,7 @@ local catch_fudge=1
 -- then jugglers update
 --   1. throw
 --   2. catch
--- balls can die nows
+-- balls can die now
 
 local entities
 local balls
@@ -45,12 +46,13 @@ local entity_classes={
 			-- debug: spawn balls
 			if btnp(4,2-self.player_num) then
 				local ball=spawn_entity("ball",self.x,self.y)
-				ball:throw(4,40,50)
+				ball:throw(rnd(1000)-500,rnd(60)+20,10)
 			end
 			-- catch balls
 			self:calc_hand_hitboxes()
 			local ball
 			for ball in all(balls) do
+				-- if self.left_hand_hitbox then
 			end
 		end,
 		draw=function(self)
@@ -126,13 +128,42 @@ local entity_classes={
 		remove_from_game=function(self)
 			del(balls,self)
 		end,
+		init=function(self)
+			self:calc_hurtbox()
+			self.energy=self.vy*self.vy/2+self.gravity*(ground_y-self.y)
+		end,
 		update=function(self)
 			self.vy+=self.gravity
 			self:apply_velocity()
+			self:calc_hurtbox()
+			-- bounce off walls
+			if self.x<0 then
+				self.x=0
+				self:calc_hurtbox()
+				if self.vx<0 then
+					self.vx*=-1
+				end
+			elseif self.x>127-self.width then
+				self.x=127-self.width
+				self:calc_hurtbox()
+				if self.vx>0 then
+					self.vx*=-1
+				end
+			end
+			-- bounce off the ground
+			if self.y>ground_y-self.height then
+				self.y=ground_y-self.height
+				self:calc_hurtbox()
+				if self.vy>0 then
+					-- we do this so that balls don't lose energy over time
+					self.vy=-sqrt(2*self.energy)
+				end
+			end
 		end,
 		draw=function(self)
-			self:draw_outline(7)
-			circfill(self.x+self.width/2,self.y+self.height/2,2,10)
+			-- self:draw_outline(7)
+			rect(self.hurtbox.x+0.5,self.hurtbox.y+0.5,self.hurtbox.x+self.hurtbox.width-0.5,self.hurtbox.y+self.hurtbox.height-0.5,7)
+			circfill(self.x+self.width/2,self.y+self.height/2,2,12)
 		end,
 		throw=function(self,distance,height,duration)
 			-- let's do some fun math to calculate out the trajectory
@@ -144,6 +175,29 @@ local entity_classes={
 			self.vy*=height/duration
 			self.gravity=-self.vy*duration/n
 			self.vx=distance/duration
+			-- calculate kinetic and potential energy too
+			self.energy=self.vy*self.vy/2+self.gravity*(ground_y-self.y)
+		end,
+		calc_hurtbox=function(self)
+			self.hurtbox={
+				x=self.x,
+				y=self.y,
+				width=self.width,
+				height=self.height
+			}
+			if self.vy>0 then
+				self.hurtbox.y-=self.vy
+				self.hurtbox.height+=self.vy
+			elseif self.vy<0 then
+				self.hurtbox.height-=self.vy
+			end
+			if self.vx<0 then
+				self.hurtbox.width+=mid(0,-self.vx,2)
+			end
+			if self.vx>0 then
+				self.hurtbox.x-=mid(0,self.vx,2)
+				self.hurtbox.width+=mid(0,self.vx,2)
+			end
 		end
 	},
 	ball_spawner={}
@@ -152,12 +206,12 @@ local entity_classes={
 function _init()
 	entities={}
 	balls={}
-	spawn_entity("juggler",10,102,{
+	spawn_entity("juggler",10,ground_y-8,{
 		player_num=1,
 		min_x=0,
 		max_x=64
 	})
-	spawn_entity("juggler",80,102,{
+	spawn_entity("juggler",80,ground_y-8,{
 		player_num=2,
 		min_x=64,
 		max_x=128
@@ -215,7 +269,7 @@ function _draw()
 		entity:draw()
 	end)
 	-- draw the ground
-	rectfill(0,110,127,127,0)
+	rectfill(0,ground_y,127,127,0)
 	pset(0,109,0)
 	pset(127,109,0)
 	pset(63,109,0)
