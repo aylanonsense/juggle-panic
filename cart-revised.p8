@@ -18,6 +18,9 @@ local ground_y=110
 --   2. catch
 -- balls can die now
 
+
+-- todo ball shouldn't slide along ground for 2 frames
+
 local entities
 local new_entities
 local balls
@@ -176,10 +179,59 @@ local entity_classes={
 			-- end
 		end,
 		draw=function(self)
-			-- rect(self.hurtbox.x+0.5,self.hurtbox.y+0.5,self.hurtbox.x+self.hurtbox.width-0.5,self.hurtbox.y+self.hurtbox.height-0.5,7)
-			-- circfill(self.x+self.width/2,self.y+self.height/2,2,12)
-			draw_sprite(0,48,5,5,self.x,self.y)
-			self:draw_outline(7)
+			-- draw the ball as blue always
+			local i
+			for i=1,15 do
+				pal(i,12)
+			end
+			palt(1,true)
+			-- if it's going slow, just draw an undeformed ball
+			local speed=sqrt(self.vx*self.vx+self.vy*self.vy)
+			if speed<5 then
+				draw_sprite(0,48,5,5,self.x,self.y)
+			-- otherwise draw a deformed version
+			else
+				local angle=atan2(self.vx,self.vy)
+				local flip_horizontal=(self.vx<0)
+				local flip_vertical=(self.vy>0)
+				-- figure out which sprite we're going to use
+				local sprite_num=flr(24*angle+0.5)
+				if flip_vertical then
+					sprite_num=24-sprite_num
+				end
+				if flip_horizontal then
+					sprite_num=12-sprite_num
+				end
+				-- find the right sprite location based on angle
+				local sy,sw,sh
+				if sprite_num==0 then
+					sy,sw,sh=123,16,5
+				elseif sprite_num==1 then
+					sy,sw,sh=117,15,6
+				elseif sprite_num==2 then
+					sy,sw,sh=108,13,9
+				elseif sprite_num==3 then
+					sy,sw,sh=97,11,11
+				elseif sprite_num==4 then
+					sy,sw,sh=84,9,13
+				elseif sprite_num==5 then
+					sy,sw,sh=69,6,15
+				elseif sprite_num==6 then
+					sy,sw,sh=53,5,16
+				end
+				-- find the right sprite location based on speed
+				local sx=mid(0,flr((speed-5)/9),3)*sw
+				local x,y=self.x,self.y
+				-- handle the other 270 degrees
+				if not flip_horizontal then
+					x+=self.width-sw
+				end
+				if flip_vertical then
+					y+=self.height-sh
+				end
+				-- draw the sprite
+				draw_sprite(sx,sy,sw,sh,x,y,flip_horizontal,flip_vertical)
+			end
 		end,
 		throw=function(self,distance,height,duration)
 			-- let's do some fun math to calculate out the trajectory
@@ -233,8 +285,8 @@ function _init()
 		min_x=64,
 		max_x=right_wall_x
 	})
-	local ball=spawn_entity("ball",10,105)
-	ball:throw(60,100,40)
+	local ball=spawn_entity("ball",10,100)--,{vx=-0.001,vy=1})
+	ball:throw(80,80,7)
 	-- add new entities to the game
 	add_new_entities()
 end
@@ -242,7 +294,7 @@ end
 -- local skip_frames=0
 function _update()
 	-- skip_frames+=1
-	-- if skip_frames%20>0 then return end
+	-- if skip_frames%30>0 then return end
 
 	-- sort entities for updating
 	sort(entities,function(entity1,entity2)
@@ -279,13 +331,14 @@ function _draw()
 	-- clear the screen
 	cls()
 	-- draw the sky
-	rectfill(left_wall_x,0,right_wall_x,127,8)
+	rectfill(left_wall_x,0,right_wall_x,127,1)
 	pset(left_wall_x,0,0)
 	pset(right_wall_x,0,0)
 	-- draw each entity
 	local entity
 	foreach(entities,function(entity)
 		entity:draw()
+		pal()
 	end)
 	-- draw the ground
 	rectfill(0,ground_y,127,127,0)
