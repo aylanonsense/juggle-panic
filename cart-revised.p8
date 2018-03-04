@@ -4,16 +4,30 @@ __lua__
 
 function noop() end
 
+local catch_fudge=1
+
 -- what to do next
 -- - jugglers can catch and throw balls
 
+-- balls update first
+-- then jugglers update
+--   1. throw
+--   2. catch
+-- balls can die nows
+
 local entities
+local balls
 
 local entity_classes={
 	juggler={
 		width=14,
 		height=8,
 		move_x=0,
+		left_hand_ball=nil,
+		right_hand_ball=nil,
+		init=function(self)
+			self:calc_hand_hitboxes()
+		end,
 		update=function(self)
 			-- move horizontally when left/right buttons are pressed
 			self.move_x=ternary(btn(1,2-self.player_num),1,0)-
@@ -21,10 +35,84 @@ local entity_classes={
 			self.vx=3*self.move_x
 			self:apply_velocity()
 			-- keep the juggler in bounds
-			self.x=mid(self.min_x,self.x,self.max_x-self.width)
+			if self.x<self.min_x then
+				self.x=self.min_x
+				self.vx=max(0,self.vx)
+			elseif self.x>self.max_x-self.width then
+				self.x=self.max_x-self.width
+				self.vx=min(0,self.vx)
+			end
+			-- debug: spawn balls
+			if btnp(4,2-self.player_num) then
+				local ball=spawn_entity("ball",self.x,self.y)
+				ball:throw(4,40,50)
+			end
+			-- catch balls
+			self:calc_hand_hitboxes()
+			local ball
+			for ball in all(balls) do
+			end
 		end,
 		draw=function(self)
 			self:draw_outline(14)
+			if self.left_hand_hitbox!=nil then
+				rect(self.left_hand_hitbox.x+0.5,self.left_hand_hitbox.y+0.5,self.left_hand_hitbox.x+self.left_hand_hitbox.width-0.5,self.left_hand_hitbox.y+self.left_hand_hitbox.height-0.5,7)
+			end
+			if self.right_hand_hitbox!=nil then
+				rect(self.right_hand_hitbox.x+0.5,self.right_hand_hitbox.y+0.5,self.right_hand_hitbox.x+self.right_hand_hitbox.width-0.5,self.right_hand_hitbox.y+self.right_hand_hitbox.height-0.5,7)
+			end
+			-- rect(self.x+0.5,self.y+0.5,self.x+self.width/2-0.5,self.y+self.height-0.5,7)
+			-- rect(self.x+self.width/2+0.5,self.y+0.5,self.x+self.width-0.5,self.y+self.height-0.5,10)
+		end,
+		calc_hand_hitboxes=function(self)
+			if self.left_hand_ball then
+				self.left_hand_hitbox=nil
+			else
+				self.left_hand_hitbox={
+					x=self.x,
+					y=self.y+1,
+					width=self.width/2,
+					height=self.height-1
+				}
+				if self.vx<0 then
+					self.left_hand_hitbox.x+=self.vx
+					self.left_hand_hitbox.width-=self.vx
+				else
+					self.left_hand_hitbox.x-=catch_fudge
+					self.left_hand_hitbox.width+=catch_fudge
+				end
+				if self.right_hand_ball then
+					if self.vx>0 then
+						self.left_hand_hitbox.width+=self.vx
+					else
+						self.left_hand_hitbox.width+=catch_fudge
+					end
+				end
+			end
+			if self.right_hand_ball then
+				self.right_hand_hitbox=nil
+			else
+				self.right_hand_hitbox={
+					x=self.x+self.width/2,
+					y=self.y+1,
+					width=self.width/2,
+					height=self.height-1
+				}
+				if self.vx>0 then
+					self.right_hand_hitbox.width+=self.vx
+				else
+					self.right_hand_hitbox.width+=catch_fudge
+				end
+				if self.left_hand_ball then
+					if self.vx<0 then
+						self.right_hand_hitbox.x+=self.vx
+						self.right_hand_hitbox.width-=self.vx
+					else
+						self.right_hand_hitbox.x-=catch_fudge
+						self.right_hand_hitbox.width+=catch_fudge
+					end
+				end
+			end
 		end
 	},
 	ball={
@@ -32,12 +120,18 @@ local entity_classes={
 		height=5,
 		is_being_thrown=false,
 		gravity=0,
+		add_to_game=function(self)
+			add(balls,self)
+		end,
+		remove_from_game=function(self)
+			del(balls,self)
+		end,
 		update=function(self)
 			self.vy+=self.gravity
 			self:apply_velocity()
 		end,
 		draw=function(self)
-			self:draw_outline(14)
+			self:draw_outline(7)
 			circfill(self.x+self.width/2,self.y+self.height/2,2,10)
 		end,
 		throw=function(self,distance,height,duration)
@@ -57,18 +151,19 @@ local entity_classes={
 
 function _init()
 	entities={}
-	spawn_entity("juggler",10,90,{
+	balls={}
+	spawn_entity("juggler",10,102,{
 		player_num=1,
 		min_x=0,
 		max_x=64
 	})
-	spawn_entity("juggler",80,90,{
+	spawn_entity("juggler",80,102,{
 		player_num=2,
 		min_x=64,
 		max_x=128
 	})
-	ball=spawn_entity("ball",0,123)
-	ball:throw(123,123,180)
+	-- ball=spawn_entity("ball",0,123)
+	-- ball:throw(123,123,180)
 end
 
 -- local skip_frames=0
@@ -95,9 +190,12 @@ function _update()
 		entities[i]:post_update()
 	end
 	-- filter out dead entities
-	filter(entities,function(entity)
-		return entity.is_alive
-	end)
+	for entity in all(entities) do
+		if not entity.is_alive then
+			del(entities,entity)
+			entity:remove_from_game()
+		end
+	end
 	-- sort entities for rendering
 	sort(entities,function(entity1,entity2)
 		return entity1.render_layer>entity2.render_layer
@@ -143,6 +241,8 @@ function spawn_entity(class_name,x,y,args,skip_init)
 			vy=0,
 			width=0,
 			height=0,
+			add_to_game=noop,
+			remove_from_game=noop,
 			init=noop,
 			update=function()
 				self:apply_velocity()
@@ -178,6 +278,7 @@ function spawn_entity(class_name,x,y,args,skip_init)
 	if not skip_init then
 		-- initialize it
 		entity:init()
+		entity:add_to_game()
 		add(entities,entity)
 	end
 	-- return it
@@ -213,14 +314,14 @@ function decrement_counter_prop(obj,k)
 end
 
 -- filter out anything in list for which func is false
-function filter(list,func)
-	local item
-	for item in all(list) do
-		if not func(item) then
-			del(list,item)
-		end
-	end
-end
+-- function filter(list,func)
+-- 	local item
+-- 	for item in all(list) do
+-- 		if not func(item) then
+-- 			del(list,item)
+-- 		end
+-- 	end
+-- end
 
 -- bubble sorts a list according to a comparison func
 function sort(list,func)
@@ -232,4 +333,17 @@ function sort(list,func)
 			j-=1
 		end
 	end
+end
+
+-- check to see if two axis-aligned rectangles are overlapping
+function rects_overlapping(x1,y1,w1,h1,x2,y2,w2,h2)
+	if type(x2)=="table" then
+		x2,y2,w2,h2=x2.x,x2.y,x2.width,x2.height
+	elseif type(y1)=="table" then
+		x2,y2,w2,h2=y1.x,y1.y,y1.width,y1.height
+	end
+	if type(x1)=="table" then
+		x1,y1,w1,h1=x1.x,x1.y,x1.width,x1.height
+	end
+	return x1+w1>x2 and x2+w2>x1 and y1+h1>y2 and y2+h2>y1
 end
