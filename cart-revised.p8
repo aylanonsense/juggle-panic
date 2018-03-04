@@ -4,9 +4,10 @@ __lua__
 
 function noop() end
 
-local entities
+-- what to do next
+-- - jugglers can catch and throw balls
 
--- todo rewrite so we can figure out the correct start vx / vy / gravity, mayhaps?
+local entities
 
 local entity_classes={
 	juggler={
@@ -14,7 +15,7 @@ local entity_classes={
 		height=8,
 		move_x=0,
 		update=function(self)
-			-- move when left/right buttons are pressed
+			-- move horizontally when left/right buttons are pressed
 			self.move_x=ternary(btn(1,2-self.player_num),1,0)-
 				ternary(btn(0,2-self.player_num),1,0)
 			self.vx=3*self.move_x
@@ -23,7 +24,7 @@ local entity_classes={
 			self.x=mid(self.min_x,self.x,self.max_x-self.width)
 		end,
 		draw=function(self)
-			self:draw_outline()
+			self:draw_outline(14)
 		end
 	},
 	ball={
@@ -36,12 +37,12 @@ local entity_classes={
 			self:apply_velocity()
 		end,
 		draw=function(self)
-			self:draw_outline()
+			self:draw_outline(14)
 			circfill(self.x+self.width/2,self.y+self.height/2,2,10)
 		end,
 		throw=function(self,distance,height,duration)
 			-- let's do some fun math to calculate out the trajectory
-			-- duration must be <=180, otherwise overflow will ruin your day
+			-- duration must be <=180, otherwise overflow will ruin the math
 			-- it looks best if duration is an even integer (you get to see the apex)
 			local n=(duration+1)*duration/2
 			local m=(duration/2+1)*duration/4
@@ -75,6 +76,10 @@ function _update()
 	-- skip_frames+=1
 	-- if skip_frames%20>0 then return end
 
+	-- sort entities for updating
+	sort(entities,function(entity1,entity2)
+		return entity1.update_priority>entity2.update_priority
+	end)
 	-- update each entity
 	local num_entities=#entities
 	local i,entity
@@ -89,12 +94,10 @@ function _update()
 	for i=1,num_entities do
 		entities[i]:post_update()
 	end
-
 	-- filter out dead entities
 	filter(entities,function(entity)
 		return entity.is_alive
 	end)
-
 	-- sort entities for rendering
 	sort(entities,function(entity1,entity2)
 		return entity1.render_layer>entity2.render_layer
@@ -104,12 +107,21 @@ end
 function _draw()
 	-- clear the screen
 	cls()
-	rect(0,0,127,127,1)
+	-- draw the sky
+	rectfill(0,0,127,127,8)
+	pset(0,0,0)
+	pset(127,0,0)
 	-- draw each entity
 	local entity
 	foreach(entities,function(entity)
 		entity:draw()
 	end)
+	-- draw the ground
+	rectfill(0,110,127,127,0)
+	pset(0,109,0)
+	pset(127,109,0)
+	pset(63,109,0)
+	pset(64,109,0)
 end
 
 function spawn_entity(class_name,x,y,args,skip_init)
@@ -123,6 +135,7 @@ function spawn_entity(class_name,x,y,args,skip_init)
 			is_alive=true,
 			frames_alive=0,
 			frames_to_death=0,
+			update_priority=0,
 			render_layer=0,
 			x=x or 0,
 			y=y or 0,
