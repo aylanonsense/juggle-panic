@@ -4,6 +4,7 @@ __lua__
 
 function noop() end
 
+local controllers={1,2}
 local catch_fudge=1
 local left_wall_x=0
 local right_wall_x=128
@@ -12,6 +13,7 @@ local ground_y=110
 local buttons
 local button_presses
 local button_releases
+local buffered_button_presses
 
 local scene_frame
 local entities
@@ -39,9 +41,10 @@ local entity_classes={
 			self:calc_hand_hitboxes()
 		end,
 		update=function(self)
+			local controller=controllers[self.player_num]
 			-- move horizontally when left/right buttons are pressed
-			self.move_x=ternary(buttons[self.player_num][1],1,0)-
-				ternary(buttons[self.player_num][0],1,0)
+			self.move_x=ternary(buttons[controller][1],1,0)-
+				ternary(buttons[controller][0],1,0)
 			local move_speed=1+ternary(self.left_hand_ball,0,1)+ternary(self.right_hand_ball,0,1)
 			self.vx=move_speed*self.move_x
 			-- don't move if forced to be stationary (during throws/catches)
@@ -59,13 +62,15 @@ local entity_classes={
 				self.vx=min(0,self.vx)
 			end
 			-- debug: spawn balls
-			if btnp(4,2-self.player_num) and self.player_num==1 then
+			if (button_presses[controller][4] or button_presses[controller][5]) and self.player_num==1 then
 				local ball=spawn_entity("ball",self.x,self.y-10,{color=7})
 				ball:throw(60,100,40)
 			end
 			-- throw balls
 			decrement_counter_prop(self,"throw_cooldown_frames")
-			if button_presses[self.player_num][4] and self.throw_cooldown_frames<=0 then
+			if (buffered_button_presses[controller][4]>0 or buffered_button_presses[controller][5]>0) and self.throw_cooldown_frames<=0 then
+				buffered_button_presses[controller][4]=0
+				buffered_button_presses[controller][5]=0
 				local preferred_throw_hand=ternary(self.most_recent_catch_hand=="left","right","left")
 				if self.move_x<0 then
 					preferred_throw_hand="left"
@@ -78,7 +83,7 @@ local entity_classes={
 					self.wiggle_frames=0
 					self.vx=0
 					self.stationary_frames=max(6,self.stationary_frames)
-					self.throw_cooldown_frames=5
+					self.throw_cooldown_frames=4
 				end
 				-- throw with the left hand unless the right hand is preferred and can throw instead
 				if self.left_hand_ball and (preferred_throw_hand=="left" or not self.right_hand_ball) then
@@ -106,7 +111,7 @@ local entity_classes={
 						self.wiggle_frames=0
 						self.vx=0
 						self.stationary_frames=max(3,self.stationary_frames)
-						self.throw_cooldown_frames=0
+						self.throw_cooldown_frames=ternary(self.left_hand_ball or self.right_hand_ball,0,min(4,self.throw_cooldown_frames))
 					end
 					-- catch with the left hand if the right can't catch it or if the right is farther from the ball
 					if is_catching_with_left_hand and (not is_catching_with_right_hand or ball.x+ball.width/2<self.x+self.width/2) then
@@ -425,9 +430,10 @@ local entity_classes={
 }
 
 function _init()
-	buttons={{},{}}
-	button_presses={{},{}}
-	button_releases={{},{}}
+	buttons={}
+	button_presses={}
+	button_releases={}
+	buffered_button_presses={}
 
 	scene_frame=0
 	entities={}
@@ -451,12 +457,23 @@ end
 function _update()
 	-- keep track of inputs (because btnp repeats presses)
 	local p
-	for p=1,2 do
+	for p=0,8 do
+		if not buttons[p] then
+			buttons[p]={}
+			button_presses[p]={}
+			button_releases[p]={}
+			buffered_button_presses[p]={}
+		end
 		local b
 		for b=0,5 do
 			button_presses[p][b]=btn(b,2-p) and not buttons[p][b]
 			button_releases[p][b]=not btn(b,2-p) and buttons[p][b]
 			buttons[p][b]=btn(b,2-p)
+			if button_presses[p][b] then
+				buffered_button_presses[p][b]=4
+			else
+				buffered_button_presses[p][b]=decrement_counter(buffered_button_presses[p][b] or 0)
+			end
 		end
 	end
 	-- skip_frames+=1
