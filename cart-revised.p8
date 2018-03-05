@@ -6,10 +6,11 @@ function noop() end
 
 local controllers={1,2}
 local catch_fudge=1
-local left_wall_x=0
+local left_wall_x=1
 local midpoint_x=64
-local right_wall_x=128
-local ground_y=110
+local right_wall_x=127
+local ground_y=114
+local sky_y=1
 
 local buttons
 local button_presses
@@ -17,8 +18,10 @@ local button_releases
 local buffered_button_presses
 
 local scene_frame
+local screen_shake_frames
 local entities
 local new_entities
+local jugglers
 local balls
 
 local entity_classes={
@@ -38,6 +41,9 @@ local entity_classes={
 		stationary_frames=0,
 		wiggle_frames=0,
 		throw_cooldown_frames=0,
+		add_to_game=function(self)
+			jugglers[self.player_num]=self
+		end,
 		init=function(self)
 			self:calc_hand_hitboxes()
 		end,
@@ -95,15 +101,15 @@ local entity_classes={
 					self.right_hand_ball=nil
 				end
 				if thrown_ball then
-					local throw_dist=64
+					local throw_dist=63
 					local ball_center=thrown_ball.x+thrown_ball.width/2
 					local landing_x=ball_center+self.throw_dir*throw_dist
 					-- make it a little more obvious which side the ball is going to land on
-					if landing_x==mid(60,landing_x,64) then
-						throw_dist=self.throw_dir*(60-ball_center)
+					if landing_x==mid(midpoint_x-4,landing_x,midpoint_x) then
+						throw_dist=self.throw_dir*(midpoint_x-4-ball_center)
 					end
-					if landing_x==mid(64,landing_x,68) then
-						throw_dist=self.throw_dir*(68-ball_center)
+					if landing_x==mid(midpoint_x,landing_x,midpoint_x+4) then
+						throw_dist=self.throw_dir*(midpoint_x+4-ball_center)
 					end
 					thrown_ball:throw(self.throw_dir*throw_dist,80,60)
 				end
@@ -176,15 +182,16 @@ local entity_classes={
 		end,
 		draw=function(self)
 			-- self:draw_outline(14)
-			-- if self.left_hand_hitbox!=nil then
-			-- 	rect(self.left_hand_hitbox.x+0.5,self.left_hand_hitbox.y+0.5,self.left_hand_hitbox.x+self.left_hand_hitbox.width-0.5,self.left_hand_hitbox.y+self.left_hand_hitbox.height-0.5,7)
-			-- end
-			-- if self.right_hand_hitbox!=nil then
-			-- 	rect(self.right_hand_hitbox.x+0.5,self.right_hand_hitbox.y+0.5,self.right_hand_hitbox.x+self.right_hand_hitbox.width-0.5,self.right_hand_hitbox.y+self.right_hand_hitbox.height-0.5,7)
-			-- end
 			pal(7,0)
 			draw_sprite(110,14*self.sprite_num,18,14,self.x,self.y-3,self.sprite_flipped)
-			pal()
+			-- draw hitboxes
+			-- pal()
+			-- if self.left_hand_hitbox then
+			-- 	rect(self.left_hand_hitbox.x+0.5,self.left_hand_hitbox.y+0.5,self.left_hand_hitbox.x+self.left_hand_hitbox.width-0.5,self.left_hand_hitbox.y+self.left_hand_hitbox.height-0.5,7)
+			-- end
+			-- if self.right_hand_hitbox then
+			-- 	rect(self.right_hand_hitbox.x+0.5,self.right_hand_hitbox.y+0.5,self.right_hand_hitbox.x+self.right_hand_hitbox.width-0.5,self.right_hand_hitbox.y+self.right_hand_hitbox.height-0.5,7)
+			-- end
 		end,
 		calc_hand_hitboxes=function(self)
 			if self.left_hand_ball then
@@ -193,7 +200,7 @@ local entity_classes={
 				self.left_hand_hitbox={
 					x=self.x,
 					y=self.y+1,
-					width=self.width/2,
+					width=6,
 					height=self.height-1
 				}
 				if self.vx<0 then
@@ -215,9 +222,9 @@ local entity_classes={
 				self.right_hand_hitbox=nil
 			else
 				self.right_hand_hitbox={
-					x=self.x+self.width/2,
+					x=self.x+self.width-6,
 					y=self.y+1,
-					width=self.width/2,
+					width=6,
 					height=self.height-1
 				}
 				if self.vx>0 then
@@ -326,6 +333,9 @@ local entity_classes={
 			-- balls that hit the ground die
 			if not self.is_held_by_juggler and not self.is_held_by_spawner and self.y>=ground_y-self.height then
 				self:die()
+				shake_screen(10)
+				local player_num=ternary(self.x+self.width/2<midpoint_x,1,2)
+				jugglers[player_num].score_track:add_mark(self.color)
 			end
 		end,
 		draw=function(self)
@@ -455,6 +465,9 @@ local entity_classes={
 				self.y=min(ground_y+3,self.y+0.1)
 			end
 			self.is_above_ground=(self.y<=ground_y-1.5)
+			if self.frames_alive%50==0 then
+				self:spawn_ball()
+			end
 		end,
 		draw=function(self)
 			pal(7,0)
@@ -464,12 +477,35 @@ local entity_classes={
 			if not self.held_ball then
 				self.held_ball=spawn_entity("ball",self.x,self.y-4,{
 					is_held_by_spawner=true,
-					spawner=self
+					spawner=self,
+					color=8
 				})
 				return true
 			else
 				return false
 			end
+		end
+	},
+	score_track={
+		width=39,
+		height=7,
+		render_layer=10,
+		init=function(self)
+			self.marks={}
+		end,
+		draw=function(self)
+			local i
+			for i=1,5 do
+				local sprite=1
+				if self.marks[i] then
+					sprite=2
+					pal(7,self.marks[i])
+				end
+				spr(sprite,self.x+8*i-8,self.y)
+			end
+		end,
+		add_mark=function(self,color)
+			add(self.marks,color)
 		end
 	}
 }
@@ -481,22 +517,27 @@ function _init()
 	buffered_button_presses={}
 
 	scene_frame=0
+	screen_shake_frames=0
 	entities={}
 	new_entities={}
+	jugglers={}
 	balls={}
-	spawn_entity("juggler",10,ground_y-entity_classes.juggler.height,{
+	spawn_entity("juggler",8,ground_y-entity_classes.juggler.height,{
 		player_num=1,
 		min_x=left_wall_x,
-		max_x=64,
-		throw_dir=1
+		max_x=midpoint_x,
+		throw_dir=1,
+		score_track=spawn_entity("score_track",13,118),
+		spawner=spawn_entity("ball_spawner",36,ground_y+3)
 	})
-	spawn_entity("juggler",80,ground_y-entity_classes.juggler.height,{
+	spawn_entity("juggler",102,ground_y-entity_classes.juggler.height,{
 		player_num=2,
-		min_x=64,
+		min_x=midpoint_x,
 		max_x=right_wall_x,
-		throw_dir=-1
+		throw_dir=-1,
+		score_track=spawn_entity("score_track",76,118),
+		spawner=spawn_entity("ball_spawner",87,ground_y+3)
 	})
-	spawn_entity("ball_spawner",40,ground_y+3):spawn_ball()
 	-- add new entities to the game
 	add_new_entities()
 end
@@ -527,6 +568,7 @@ function _update()
 	-- skip_frames+=1
 	-- if skip_frames%15>0 then return end
 	scene_frame=increment_counter(scene_frame)
+	screen_shake_frames=decrement_counter(screen_shake_frames)
 	-- sort entities for updating
 	sort(entities,function(entity1,entity2)
 		return entity1.update_priority>entity2.update_priority
@@ -559,24 +601,43 @@ function _update()
 end
 
 function _draw()
+	-- shake the screen
+	local screen_shake_y=-ceil(screen_shake_frames/2)*sin(screen_shake_frames/2.1)
+	camera(0,screen_shake_y)
 	-- clear the screen
 	cls()
 	-- draw the sky
-	rectfill(left_wall_x+0.5,0.5,right_wall_x-0.5,127.5,8)
-	pset(left_wall_x+0.5,0,0)
-	pset(right_wall_x-0.5,0,0)
+	local l,r=left_wall_x+0.5,right_wall_x-0.5
+	rectfill(l,sky_y+0.5,r,127.5,1)
+	rectfill(l,32.5,r,127.5,13)
+	rectfill(l,39.5,r,127.5,12)
+	rectfill(l,65.5,r,127.5,11)
+	rectfill(l,85.5,r,127.5,10)
+	rectfill(l,96.5,r,127.5,9)
+	rectfill(l,104.5,r,127.5,8)
+	rectfill(l,109.5,r,127.5,2)
+	pset(l,sky_y+0.5,0)
+	pset(r,sky_y+0.5,0)
 	-- draw each entity
-	local entity
 	foreach(entities,function(entity)
-		entity:draw()
-		pal()
+		if entity.render_layer<10 then
+			entity:draw()
+			pal()
+		end
 	end)
 	-- draw the ground
 	rectfill(-10.5,ground_y+0.5,137.5,137.5,0)
-	pset(left_wall_x+0.5,ground_y-0.5,0)
-	pset(right_wall_x-0.5,ground_y-0.5,0)
+	pset(l,ground_y-0.5,0)
+	pset(r,ground_y-0.5,0)
 	pset(midpoint_x-0.5,ground_y-0.5,0)
 	pset(midpoint_x+0.5,ground_y-0.5,0)
+	-- draw ui entities
+	foreach(entities,function(entity)
+		if entity.render_layer>=10 then
+			entity:draw()
+			pal()
+		end
+	end)
 end
 
 function spawn_entity(class_name,x,y,args,skip_init)
@@ -717,15 +778,19 @@ function draw_sprite(sx,sy,sw,sh,x,y,...)
 	sspr(sx,sy,sw,sh,x+0.5,y+0.5,sw,sh,...)
 end
 
+function shake_screen(frames)
+	screen_shake_frames=min(screen_shake_frames+frames,17)
+end
+
 __gfx__
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222700777077770000000
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222777777777770000000
-22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222077707777770000000
+00000000000000007700077022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
+00777000001110007770777022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
+07777700010001000777770022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
+07777700010001000077700022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
+07777700010001000777770022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
+00777000001110007770777022222222222222222222222222222222222222222222222222222222222222222222222222222222222222700777077770000000
+00000000000000007700077022222222222222222222222222222222222222222222222222222222222222222222222222222222222222777777777770000000
+00000000000000000000000022222222222222222222222222222222222222222222222222222222222222222222222222222222222222077707777770000000
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077777700000
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000007777777777007
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000007777770777777
@@ -766,11 +831,11 @@ __gfx__
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-0ccc0222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-ccccc222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-ccccc222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-ccccc222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
-0ccc0222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+0ccc0011102222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+ccccc100012222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+ccccc100012222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+ccccc100012222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
+0ccc0011102222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
 0bbb00aaa00099000880222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
 0bbbb0aaa00999008880222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
 bbbbbaaaaa0999008880222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
