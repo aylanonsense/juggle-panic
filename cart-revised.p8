@@ -2,6 +2,39 @@ pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
 
+--[[
+todo:
+	ball speed
+		global concept
+		per-player concept
+		tracker
+	drop effect
+		particles
+	win/lose effect
+		particles
+		title screen
+	ball spawn
+		logic
+
+update_priority:
+	1:	juggler_icon
+	2:	ball_icon
+	3:	score_track
+	4:	ball_spawner
+	5:	juggler
+	6:	ball
+	8:	game_over_logic
+
+render_layer:
+	1:	game_over_logic
+	2:	ball
+	3:	ball_spawner
+	4:	juggler
+	10:	score_track
+	11:	juggler_icon
+	12:	ball_icon
+]]
+
 function noop() end
 
 local controllers={1,2}
@@ -11,6 +44,7 @@ local midpoint_x=64
 local right_wall_x=127
 local ground_y=114
 local sky_y=1
+local ball_colors={8,9,10,11,12}
 
 local buttons
 local button_presses
@@ -23,11 +57,12 @@ local entities
 local new_entities
 local jugglers
 local balls
+local game_over_logic
 
 local entity_classes={
 	juggler={
-		update_priority=1,
-		render_layer=2,
+		update_priority=5,
+		render_layer=4,
 		width=18,
 		height=11,
 		move_x=0,
@@ -45,6 +80,7 @@ local entity_classes={
 			jugglers[self.player_num]=self
 		end,
 		init=function(self)
+			self.icon=spawn_entity("juggler_icon")
 			self:calc_hand_hitboxes()
 		end,
 		update=function(self)
@@ -193,6 +229,10 @@ local entity_classes={
 			-- 	rect(self.right_hand_hitbox.x+0.5,self.right_hand_hitbox.y+0.5,self.right_hand_hitbox.x+self.right_hand_hitbox.width-0.5,self.right_hand_hitbox.y+self.right_hand_hitbox.height-0.5,7)
 			-- end
 		end,
+		on_game_end=function(self)
+			self.left_hand_ball=nil
+			self.right_hand_ball=nil
+		end,
 		calc_hand_hitboxes=function(self)
 			if self.left_hand_ball then
 				self.left_hand_hitbox=nil
@@ -267,9 +307,31 @@ local entity_classes={
 			end
 		end
 	},
+	juggler_icon={
+		update_priority=1,
+		render_layer=11,
+		y=ground_y+1,
+		width=18,
+		height=3,
+		visibility_frames=0,
+		update=function(self)
+			decrement_counter_prop(self,"visibility_frames")
+		end,
+		draw=function(self)
+			if self.visibility_frames>0 then
+				line(self.x+0.5,self.y+0.5,self.x+0.5,self.y+self.height-0.5,1)
+				line(self.x+0.5,self.y+1.5,self.x+self.width-0.5,self.y+1.5,1)
+				line(self.x+self.width-0.5,self.y+0.5,self.x+self.width-0.5,self.y+self.height-0.5,1)
+			end
+		end,
+		show=function(self,juggler)
+			self.x=juggler.x
+			self.visibility_frames=90
+		end
+	},
 	ball={
-		update_priority=2,
-		render_layer=1,
+		update_priority=6,
+		render_layer=2,
 		width=5,
 		height=5,
 		gravity=0,
@@ -331,11 +393,18 @@ local entity_classes={
 		end,
 		post_update=function(self)
 			-- balls that hit the ground die
-			if not self.is_held_by_juggler and not self.is_held_by_spawner and self.y>=ground_y-self.height then
+			if not self.is_held_by_juggler and not self.is_held_by_spawner and self.y>=ground_y-self.height and not game_over_logic then
 				self:die()
 				shake_screen(10)
 				local player_num=ternary(self.x+self.width/2<midpoint_x,1,2)
 				jugglers[player_num].score_track:add_mark(self.color)
+				local juggler=jugglers[player_num]
+				juggler.icon:show(juggler)
+				local ball_icon=spawn_entity("ball_icon")
+				ball_icon:show(self)
+				if #juggler.score_track.marks>=5 then
+					game_over_logic=spawn_entity("game_over_logic")
+				end
 			end
 		end,
 		draw=function(self)
@@ -409,6 +478,9 @@ local entity_classes={
 				end
 			end
 		end,
+		on_game_end=function(self)
+			self:die()
+		end,
 		throw=function(self,distance,height,duration)
 			self.is_held_by_juggler=false
 			-- let's do some fun math to calculate out the trajectory
@@ -452,7 +524,32 @@ local entity_classes={
 			end
 		end
 	},
+	ball_icon={
+		update_priority=2,
+		render_layer=12,
+		y=ground_y,
+		width=5,
+		height=5,
+		color=7,
+		visibility_frames=0,
+		update=function(self)
+			decrement_counter_prop(self,"visibility_frames")
+		end,
+		draw=function(self)
+			if self.visibility_frames>0 then
+				pal(7,self.color)
+				spr(3,self.x-0.5,self.y+0.5)
+			end
+		end,
+		show=function(self,ball)
+			self.x=ball.x
+			self.color=ball.color
+			self.visibility_frames=90
+		end
+	},
 	ball_spawner={
+		update_priority=4,
+		render_layer=3,
 		width=5,
 		height=4,
 		held_ball=nil,
@@ -473,12 +570,15 @@ local entity_classes={
 			pal(7,0)
 			draw_sprite(36,84,5,4,self.x,self.y)
 		end,
+		on_game_end=function(self)
+			self.held_ball=nil
+		end,
 		spawn_ball=function(self)
-			if not self.held_ball then
+			if not self.held_ball and not game_over_logic then
 				self.held_ball=spawn_entity("ball",self.x,self.y-4,{
 					is_held_by_spawner=true,
 					spawner=self,
-					color=8
+					color=ball_colors[rnd_int(1,#ball_colors)]
 				})
 				return true
 			else
@@ -487,9 +587,11 @@ local entity_classes={
 		end
 	},
 	score_track={
+		update_priority=3,
+		render_layer=10,
+		y=ground_y+6,
 		width=39,
 		height=7,
-		render_layer=10,
 		init=function(self)
 			self.marks={}
 		end,
@@ -501,11 +603,52 @@ local entity_classes={
 					sprite=2
 					pal(7,self.marks[i])
 				end
-				spr(sprite,self.x+8*i-8,self.y)
+				spr(sprite,self.x+8*i-7.5,self.y+0.5)
 			end
 		end,
 		add_mark=function(self,color)
 			add(self.marks,color)
+		end
+	},
+	game_over_logic={
+		update_priority=8,
+		render_layer=1,
+		add_to_game=function(self)
+			foreach(entities,function(entity)
+				entity:on_game_end()
+			end)
+		end,
+		init=function(self)
+			self.messages={}
+		end,
+		update=function(self)
+			foreach(self.messages,function(msg)
+				msg.vy+=0.2
+				msg.x+=msg.vx
+				msg.y+=msg.vy
+			end)
+		end,
+		post_update=function(self)
+			local f=self.frames_alive
+			if f<40 or f==mid(60,f,70) or f==mid(80,f,85) or f==95 then
+				local p
+				for p=1,2 do
+					local juggler=jugglers[p]
+					add(self.messages,{
+						text=ternary(#juggler.score_track.marks>=5,"lose","win"),
+						x=juggler.x+juggler.width/2,
+						y=juggler.y+juggler.height/2,
+						vx=rnd(0.9)-0.45,
+						vy=-rnd(2.5)-4.5,
+						color=ball_colors[rnd_int(1,#ball_colors)]
+					})
+				end
+			end
+		end,
+		draw=function(self)
+			foreach(self.messages,function(msg)
+				print(msg.text,msg.x-2*#msg.text,msg.y,msg.color)
+			end)
 		end
 	}
 }
@@ -527,7 +670,7 @@ function _init()
 		min_x=left_wall_x,
 		max_x=midpoint_x,
 		throw_dir=1,
-		score_track=spawn_entity("score_track",13,118),
+		score_track=spawn_entity("score_track",13),
 		spawner=spawn_entity("ball_spawner",36,ground_y+3)
 	})
 	spawn_entity("juggler",102,ground_y-entity_classes.juggler.height,{
@@ -535,7 +678,7 @@ function _init()
 		min_x=midpoint_x,
 		max_x=right_wall_x,
 		throw_dir=-1,
-		score_track=spawn_entity("score_track",76,118),
+		score_track=spawn_entity("score_track",76),
 		spawner=spawn_entity("ball_spawner",87,ground_y+3)
 	})
 	-- add new entities to the game
@@ -638,6 +781,7 @@ function _draw()
 			pal()
 		end
 	end)
+	-- rect(0,0,127,127,1)
 end
 
 function spawn_entity(class_name,x,y,args,skip_init)
@@ -678,12 +822,15 @@ function spawn_entity(class_name,x,y,args,skip_init)
 				end
 			end,
 			on_death=noop,
+			on_game_end=noop,
 			apply_velocity=function(self)
 				self.x+=self.vx
 				self.y+=self.vy
 			end
 		}
 	end
+	-- add the class name
+	entity.class_name=class_name
 	-- add class properties/methods onto it
 	local k,v
 	for k,v in pairs(the_class) do
@@ -782,15 +929,20 @@ function shake_screen(frames)
 	screen_shake_frames=min(screen_shake_frames+frames,17)
 end
 
+-- returns a random integer between min_val and max_val, inclusive
+function rnd_int(min_val,max_val)
+	return flr(min_val+rnd(1+max_val-min_val))
+end
+
 __gfx__
-00000000000000007700077022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
-00777000001110007770777022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
-07777700010001000777770022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
-07777700010001000077700022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
-07777700010001000777770022222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
-00777000001110007770777022222222222222222222222222222222222222222222222222222222222222222222222222222222222222700777077770000000
-00000000000000007700077022222222222222222222222222222222222222222222222222222222222222222222222222222222222222777777777770000000
-00000000000000000000000022222222222222222222222222222222222222222222222222222222222222222222222222222222222222077707777770000000
+00000000000000007700077000000000222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
+00777000001110007770777000070000222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
+07777700010001000777770000777000222222222222222222222222222222222222222222222222222222222222222222222222222222000000000000000000
+07777700010001000077700007777700222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
+07777700010001000777770000000000222222222222222222222222222222222222222222222222222222222222222222222222222222000000077770000000
+00777000001110007770777000000000222222222222222222222222222222222222222222222222222222222222222222222222222222700777077770000000
+00000000000000007700077000000000222222222222222222222222222222222222222222222222222222222222222222222222222222777777777770000000
+00000000000000000000000000000000222222222222222222222222222222222222222222222222222222222222222222222222222222077707777770000000
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000000077777700000
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000007777777777007
 22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222000007777770777777
