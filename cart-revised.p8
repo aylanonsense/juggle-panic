@@ -4,23 +4,21 @@ __lua__
 
 --[[
 todo:
-	ball speed
-		global concept
-		per-player concept
-		tracker
-	drop effect
-		particles
-	title screen
-	win/lose effect
-		go to title screen
-		reset everything
-	ball spawn
-		logic
-	balls colliding
+	ball speed gradually increases
+	a tracker shows the current ball speed
+	particles spawn when a ball is dropped
+	the title screen has a pretty title
+	the title screen has balls flying past
+	the title screen has music
+	balls spawn periodically, dependent on circumstances
+	balls can collide in mid-air
+	sound effects
+	there are plenty of wacky game modes to have fun with
 
 scenes:
 	title
 	title->game
+	game-start
 	game
 	game-end
 	game->title
@@ -32,13 +30,13 @@ update_priority:
 	4:	ball_spawner
 	5:	juggler
 	6:	ball
-	8:	message_spouts
-	9:	mode_select
-	10:	title_screen
-	11:	camera_operator
+	7:	game_over_text_geysers
+	8:	mode_select
+	9:	title_screen
+	10:	camera_operator
 
 render_layer:
-	1:	message_spouts
+	1:	game_over_text_geysers
 	2:	ball
 	3:	ball_spawner
 	4:	juggler
@@ -47,6 +45,7 @@ render_layer:
 	12:	ball_icon
 	13:	mode_select
 	14:	title_screen
+	15:	camera_operator
 ]]
 
 function noop() end
@@ -102,8 +101,17 @@ local entity_classes={
 		add_to_game=function(self)
 			jugglers[self.player_num]=self
 		end,
+		on_scene_change=function(self)
+			self.is_paused=(scene=="title->game")
+			if scene=="game-end" then
+				self.spawner=nil
+				self.left_hand_ball=nil
+				self.right_hand_ball=nil
+			elseif scene=="title" then
+				self:die()
+			end
+		end,
 		init=function(self)
-			self.icon=spawn_entity("juggler_icon")
 			self:calc_hand_hitboxes()
 		end,
 		update=function(self)
@@ -252,10 +260,6 @@ local entity_classes={
 			-- 	rect(self.right_hand_hitbox.x+0.5,self.right_hand_hitbox.y+0.5,self.right_hand_hitbox.x+self.right_hand_hitbox.width-0.5,self.right_hand_hitbox.y+self.right_hand_hitbox.height-0.5,7)
 			-- end
 		end,
-		on_game_end=function(self)
-			self.left_hand_ball=nil
-			self.right_hand_ball=nil
-		end,
 		calc_hand_hitboxes=function(self)
 			if self.left_hand_ball then
 				self.left_hand_hitbox=nil
@@ -337,6 +341,11 @@ local entity_classes={
 		width=18,
 		height=3,
 		visibility_frames=0,
+		on_scene_change=function(self)
+			if scene=="title" then
+				self:die()
+			end
+		end,
 		update=function(self)
 			decrement_counter_prop(self,"visibility_frames")
 		end,
@@ -370,7 +379,7 @@ local entity_classes={
 			del(balls,self)
 		end,
 		on_scene_change=function(self)
-			if scene!="game" then
+			if scene=="game-end" then
 				self:die()
 			end
 		end,
@@ -428,11 +437,9 @@ local entity_classes={
 				jugglers[player_num].score_track:add_mark(self.color)
 				local juggler=jugglers[player_num]
 				juggler.icon:show(juggler)
-				local ball_icon=spawn_entity("ball_icon")
-				ball_icon:show(self)
+				local ball_icon=spawn_entity("ball_icon",self.x,ground_y,{color=self.color})
 				if #juggler.score_track.marks>=1 then
 					change_scene("game-end")
-					spawn_entity("message_spouts")
 				end
 			end
 		end,
@@ -504,9 +511,6 @@ local entity_classes={
 				end
 			end
 		end,
-		on_game_end=function(self)
-			self:die()
-		end,
 		throw=function(self,distance,height,duration)
 			self.is_held_by_juggler=false
 			-- let's do some fun math to calculate out the trajectory
@@ -553,24 +557,13 @@ local entity_classes={
 	ball_icon={
 		update_priority=2,
 		render_layer=12,
-		y=ground_y,
 		width=5,
 		height=5,
 		color=7,
-		visibility_frames=0,
-		update=function(self)
-			decrement_counter_prop(self,"visibility_frames")
-		end,
+		frames_to_death=90,
 		draw=function(self)
-			if self.visibility_frames>0 then
-				pal(7,self.color)
-				spr(3,self.x-0.5,self.y+0.5)
-			end
-		end,
-		show=function(self,ball)
-			self.x=ball.x
-			self.color=ball.color
-			self.visibility_frames=90
+			pal(7,self.color)
+			spr(3,self.x-0.5,self.y+0.5)
 		end
 	},
 	ball_spawner={
@@ -580,6 +573,11 @@ local entity_classes={
 		height=4,
 		held_ball=nil,
 		is_above_ground=false,
+		on_scene_change=function(self)
+			if scene=="game-end" then
+				self:die()
+			end
+		end,
 		update=function(self)
 			if self.held_ball then
 				self.y=max(ground_y-self.height,self.y-0.2)
@@ -600,7 +598,7 @@ local entity_classes={
 			self.held_ball=nil
 		end,
 		spawn_ball=function(self)
-			if not self.held_ball then
+			if scene=="game" and not self.held_ball then
 				self.held_ball=spawn_entity("ball",self.x,self.y-4,{
 					is_held_by_spawner=true,
 					spawner=self,
@@ -618,6 +616,11 @@ local entity_classes={
 		y=ground_y+6,
 		width=39,
 		height=7,
+		on_scene_change=function(self)
+			if scene=="title" then
+				self:die()
+			end
+		end,
 		init=function(self)
 			self.marks={}
 		end,
@@ -637,24 +640,27 @@ local entity_classes={
 		end
 	},
 	camera_operator={
-		update_priority=11,
+		update_priority=10,
+		render_layer=15,
 		y=-127,
 		vy=0,
 		update=function(self)
 			-- fall up/down during scene transitions
-			if scene=="title->game" then
+			if scene=="title->game" or scene=="game-start" then
 				self.vy+=0.5
 			elseif scene=="game->title" then
 				self.vy-=0.5
 			end
 			self:apply_velocity()
 			-- bounce off bottom of screen
-			if scene=="title->game" and self.y>0 then
+			if (scene=="title->game" or scene=="game-start") and self.y>0 then
 				self.y=0
 				self.vy=-0.25*self.vy
 				if self.vy>-0.5 then
 					self.vy=0
 					change_scene("game")
+				elseif scene!="game-start" then
+					change_scene("game-start")
 				end
 			end
 			-- bounce off top of screen
@@ -669,10 +675,13 @@ local entity_classes={
 		end
 	},
 	title_screen={
-		update_priority=10,
+		update_priority=9,
 		render_layer=14,
 		x=64,
 		y=-64,
+		on_scene_change=function(self)
+			self.is_paused=(scene=="game-start" or scene=="game" or scene=="game-end")
+		end,
 		init=function(self)
 			self.mode_select=spawn_entity("mode_select")
 		end,
@@ -701,7 +710,7 @@ local entity_classes={
 		end
 	},
 	mode_select={
-		update_priority=9,
+		update_priority=8,
 		render_layer=13,
 		x=16,
 		y=-30,
@@ -712,6 +721,10 @@ local entity_classes={
 		last_mode_index=nil,
 		last_mode_x=64,
 		last_mode_dir=1,
+		line_length=0,
+		on_scene_change=function(self)
+			self.is_paused=(scene=="game-start" or scene=="game" or scene=="game-end")
+		end,
 		update=function(self)
 			if scene=="title" then
 				-- change modes
@@ -723,8 +736,11 @@ local entity_classes={
 				end
 			end
 			-- move modes into and out of view
-			self.mode_x+=0.5*(self.x-self.mode_x)
-			self.last_mode_x+=0.5*(self.x+87*self.last_mode_dir-self.last_mode_x)
+			self.mode_x+=0.3*(self.x-self.mode_x)
+			self.last_mode_x+=0.3*(self.x+87*self.last_mode_dir-self.last_mode_x)
+			-- give the player an indiciation of how far they've scrolled
+			local ideal_line_length=ternary(self.mode_index==1,0,76*((self.mode_index-1)/(#modes-1)))
+			self.line_length+=0.3*(ideal_line_length-self.line_length)
 		end,
 		draw=function(self)
 			-- draw current mode
@@ -737,10 +753,8 @@ local entity_classes={
 			rectfill(self.x-45.5,self.y+0.5,self.x+4.5,self.y+7.5,0)
 			rectfill(self.x+90.5,self.y+0.5,self.x+141.5,self.y+7.5,0)
 			-- draw progress line
-			local percent=(self.mode_index-1)/(#modes-1)
-			local len=76*percent
-			if percent>0 then
-				line(self.x+9.5,self.y+8.5,self.x+9.5+len,self.y+8.5,1)
+			if self.line_length>0.1 then
+				line(self.x+9.5,self.y+8.5,self.x+9.5+self.line_length,self.y+8.5,1)
 			end
 			-- draw left/right arrows
 			local left_arrow_sprite=19
@@ -794,10 +808,14 @@ local entity_classes={
 			print(mode,x+48.5-2*#mode,self.y+1.5,light_color)
 		end
 	},
-	message_spouts={
-		update_priority=8,
+	game_over_text_geysers={
+		update_priority=7,
 		render_layer=1,
-		frames_to_death=190,
+		on_scene_change=function(self)
+			if scene=="title" then
+				self:die()
+			end
+		end,
 		init=function(self)
 			self.messages={}
 		end,
@@ -824,7 +842,7 @@ local entity_classes={
 					})
 				end
 			end
-			if self.frames_to_death==50 then
+			if f==140 then
 				change_scene("game->title")
 			end
 		end,
@@ -842,8 +860,9 @@ function _init()
 	button_presses={}
 	button_releases={}
 	buffered_button_presses={}
+	-- start on the title screen
+	change_scene("title")
 	-- initialize game vars
-	scene="title"
 	game_frame=0
 	screen_shake_frames=0
 	-- initialize entity vars
@@ -854,22 +873,6 @@ function _init()
 	-- create our starting entities
 	camera_operator=spawn_entity("camera_operator")
 	title_screen=spawn_entity("title_screen")
-	spawn_entity("juggler",8,ground_y-entity_classes.juggler.height,{
-		player_num=1,
-		min_x=left_wall_x,
-		max_x=midpoint_x,
-		throw_dir=1,
-		score_track=spawn_entity("score_track",13),
-		spawner=spawn_entity("ball_spawner",36,ground_y+3)
-	})
-	spawn_entity("juggler",102,ground_y-entity_classes.juggler.height,{
-		player_num=2,
-		min_x=midpoint_x,
-		max_x=right_wall_x,
-		throw_dir=-1,
-		score_track=spawn_entity("score_track",76),
-		spawner=spawn_entity("ball_spawner",87,ground_y+3)
-	})
 	-- add new entities to the game
 	add_new_entities()
 end
@@ -961,8 +964,12 @@ function _draw()
 			pal()
 		end
 	end)
-	-- draw the ground
+	-- draw rects so that nothing is rendered off screen
+	rectfill(-10.5,-137.5,137.5,0.5,0)
+	rectfill(-10.5,0.5,0.5,137.5,0)
+	rectfill(127.5,0.5,137.5,137.5,0)
 	rectfill(-10.5,ground_y+0.5,137.5,137.5,0)
+	-- draw the corners
 	pset(l,ground_y-0.5,0)
 	pset(r,ground_y-0.5,0)
 	pset(midpoint_x-0.5,ground_y-0.5,0)
@@ -974,9 +981,44 @@ function _draw()
 			pal()
 		end
 	end)
-	-- draw screen borders
+	-- draw debug info
 	camera()
-	rect(0,0,127,127,1)
+	rect(0,0,127,127,3)
+	print("scene:    "..scene,3,3,3)
+	print("entities: "..#entities,3,10,3)
+end
+
+function change_scene(s)
+	-- inform all the entities
+	if scene!=s then
+		scene=s
+		foreach(entities,function(entity)
+			entity:on_scene_change()
+		end)	
+	end
+	-- and then do stuff based on the scene
+	if scene=="title->game" then
+		spawn_entity("juggler",8,ground_y-entity_classes.juggler.height,{
+			player_num=1,
+			min_x=left_wall_x,
+			max_x=midpoint_x,
+			throw_dir=1,
+			icon=spawn_entity("juggler_icon"),
+			score_track=spawn_entity("score_track",13),
+			spawner=spawn_entity("ball_spawner",36,ground_y+3)
+		})
+		spawn_entity("juggler",102,ground_y-entity_classes.juggler.height,{
+			player_num=2,
+			min_x=midpoint_x,
+			max_x=right_wall_x,
+			throw_dir=-1,
+			icon=spawn_entity("juggler_icon"),
+			score_track=spawn_entity("score_track",76),
+			spawner=spawn_entity("ball_spawner",87,ground_y+3)
+		})
+	elseif scene=="game-end" then
+		spawn_entity("game_over_text_geysers")
+	end
 end
 
 function spawn_entity(class_name,x,y,args,skip_init)
@@ -1019,7 +1061,6 @@ function spawn_entity(class_name,x,y,args,skip_init)
 				end
 			end,
 			on_death=noop,
-			on_game_end=noop,
 			apply_velocity=function(self)
 				self.x+=self.vx
 				self.y+=self.vy
@@ -1130,15 +1171,6 @@ end
 -- returns a random integer between min_val and max_val, inclusive
 function rnd_int(min_val,max_val)
 	return flr(min_val+rnd(1+max_val-min_val))
-end
-
-function change_scene(s)
-	if scene!=s then
-		scene=s
-		foreach(entities,function(entity)
-			entity:on_scene_change()
-		end)
-	end
 end
 
 function colorwash(c)
