@@ -4,8 +4,6 @@ __lua__
 
 --[[
 todo:
-*	ball speed gradually increases
-	a tracker shows the current ball speed
 	the title screen has a pretty title
 	the title screen has balls flying past
 	the title screen has music
@@ -50,7 +48,7 @@ render_layer:
 
 function noop() end
 
-local debug_mode=true
+local debug_mode=false
 local skip_rate=15
 local skip_rate_active=false
 local skip_frames
@@ -200,11 +198,11 @@ local entity_classes={
 					-- figure out throw duration
 					local throw_dur=mid(6,flr(150/(1+ball_speed_rating/3)),100)
 					-- figure out throw height
-					local throw_height=77
+					local throw_height=mid(71,70+ball_speed_rating,120)
 					-- throw the ball!
 					thrown_ball:throw(self.throw_dir*throw_dist,throw_height,throw_dur)
 					-- balls travel faster and faster
-					ball_speed_rating+=1
+					ball_speed_rating=min(ball_speed_rating+1,100)
 				end
 			end
 			-- catch balls
@@ -418,10 +416,12 @@ local entity_classes={
 		end,
 		remove_from_game=function(self)
 			del(balls,self)
+			-- if there are no more balls, spawn two more
 			if scene=="game" and #balls<=0 then
 				jugglers[1].spawner:spawn_ball()
 				jugglers[2].spawner:spawn_ball()
 				standstill_frames=280
+				ball_speed_rating=max(1,flr(0.3*ball_speed_rating))
 			end
 		end,
 		on_scene_change=function(self)
@@ -487,7 +487,7 @@ local entity_classes={
 				local player_num=ternary(self.x+self.width/2<midpoint_x,1,2)
 				jugglers[player_num].score_track:add_mark(self.color)
 				local juggler=jugglers[player_num]
-				juggler.icon:show(juggler)
+				-- juggler.icon:show(juggler)
 				-- fudge the number of where the ball landed, to help convince the player they missed it
 				-- shhhh don't tell, it's for the best! ;)
 				local landing_x=self.x-self.vx
@@ -965,6 +965,53 @@ local entity_classes={
 				print(msg.text,msg.x-2*#msg.text,msg.y,msg.color)
 			end)
 		end
+	},
+	speedometer={
+		update_priority=0,
+		render_layer=16,
+		x=49,
+		y=ground_y+7,
+		width=31,
+		height=5,
+		text="",
+		color=1,
+		on_scene_change=function(self)
+			if scene=="title" then
+				self:die()
+			end
+		end,
+		update=function(self)
+			local text,color
+			if ball_speed_rating<5 then
+				text,color="slow",1
+			elseif ball_speed_rating<9 then
+				text,color="fast",13
+			elseif ball_speed_rating<13 then
+				text,color="faster",12
+			elseif ball_speed_rating<17 then
+				text,color="v.fast",11
+			elseif ball_speed_rating<21 then
+				text,color="wowfast",10
+			elseif ball_speed_rating<25 then
+				text,color="aaahh!!",9
+			elseif ball_speed_rating<30 then
+				text,color="nonono!",8
+			elseif ball_speed_rating<37 then
+				text,color="max!!!",2
+			elseif ball_speed_rating<50 then
+				text,color="maxer!!",14
+			elseif ball_speed_rating<70 then
+				text,color="maxest!",15
+			elseif ball_speed_rating<100 then
+				text,color="rly now",7
+			else
+				text,color="error",8
+			end
+			self.text,self.color=text,color
+		end,
+		draw=function(self)
+			print(self.text,self.x+16-2*#self.text,self.y,self.color)
+		end
 	}
 }
 
@@ -1170,7 +1217,7 @@ function change_scene(s)
 			max_x=midpoint_x,
 			throw_dir=1,
 			icon=spawn_entity("juggler_icon"),
-			score_track=spawn_entity("score_track",13),
+			score_track=spawn_entity("score_track",7),
 			spawner=spawn_entity("ball_spawner",36,ground_y+3)
 		})
 		spawn_entity("juggler",102,ground_y-entity_classes.juggler.height,{
@@ -1179,9 +1226,10 @@ function change_scene(s)
 			max_x=right_wall_x,
 			throw_dir=-1,
 			icon=spawn_entity("juggler_icon"),
-			score_track=spawn_entity("score_track",76),
+			score_track=spawn_entity("score_track",83),
 			spawner=spawn_entity("ball_spawner",87,ground_y+3)
 		})
+		spawn_entity("speedometer")
 	elseif scene=="game" then
 		standstill_frames=220
 		occasional_ball_spawn_frames=440
