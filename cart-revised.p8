@@ -4,9 +4,8 @@ __lua__
 
 --[[
 todo:
-	ball speed gradually increases
+*	ball speed gradually increases
 	a tracker shows the current ball speed
-	particles spawn when a ball is dropped
 	the title screen has a pretty title
 	the title screen has balls flying past
 	the title screen has music
@@ -23,6 +22,7 @@ scenes:
 	game->title
 
 update_priority:
+	0:	ball_sparks
 	1:	juggler_icon
 	2:	ball_icon
 	3:	score_track
@@ -35,6 +35,7 @@ update_priority:
 	10:	camera_operator
 
 render_layer:
+	0:	ball_sparks
 	1:	game_over_text_geysers
 	2:	ball
 	3:	ball_spawner
@@ -49,6 +50,7 @@ render_layer:
 
 function noop() end
 
+local debug_mode=true
 local controllers={1,0}
 local catch_fudge=1
 local left_wall_x=1
@@ -179,7 +181,7 @@ local entity_classes={
 					if landing_x==mid(midpoint_x,landing_x,midpoint_x+4) then
 						throw_dist=self.throw_dir*(midpoint_x+4-ball_center)
 					end
-					thrown_ball:throw(self.throw_dir*throw_dist,80,60)
+					thrown_ball:throw(self.throw_dir*throw_dist,80,20)
 				end
 			end
 			-- catch balls
@@ -443,6 +445,7 @@ local entity_classes={
 			-- balls that hit the ground die
 			if not self.is_held_by_juggler and not self.is_held_by_spawner and self.y>=ground_y-self.height then
 				self:die()
+				spawn_entity("ball_sparks",self.x,nil,{color=self.color})
 				shake_screen(10)
 				local player_num=ternary(self.x+self.width/2<midpoint_x,1,2)
 				jugglers[player_num].score_track:add_mark(self.color)
@@ -565,6 +568,45 @@ local entity_classes={
 			end
 		end
 	},
+	ball_sparks={
+		update_priority=0,
+		render_layer=0,
+		y=ground_y-5,
+		width=5,
+		height=5,
+		frames_to_death=40,
+		init=function(self)
+			self.particles={}
+			local i
+			for i=1,30 do
+				local x,y=self.x+self.width/2,self.y+self.height
+				local speed=0.8+1*rnd()
+				add(self.particles,{
+					x=x,
+					y=y,
+					prev_x=x,
+					prev_y=y,
+					vx=(rnd(3)-1.5)*speed,
+					vy=-9*speed
+				})
+			end
+		end,
+		update=function(self)
+			foreach(self.particles,function(particle)
+				particle.vy+=0.2
+				particle.prev_x=particle.x
+				particle.prev_y=particle.y
+				particle.x+=particle.vx
+				particle.y+=particle.vy
+			end)
+		end,
+		draw=function(self)
+			foreach(self.particles,function(particle)
+				-- pset(particle.x,particle.y,1)
+				line(particle.prev_x+0.5,particle.prev_y+0.5,particle.x+0.5,particle.y+0.5,self.color)
+			end)
+		end
+	},
 	ball_icon={
 		update_priority=2,
 		render_layer=12,
@@ -590,14 +632,15 @@ local entity_classes={
 			end
 		end,
 		update=function(self)
+			local spawn_speed=ternary(debug_mode,10,0.1)
 			if self.held_ball then
-				self.y=max(ground_y-self.height,self.y-0.1)
+				self.y=max(ground_y-self.height,self.y-spawn_speed)
 				self.held_ball.y=self.y-4
 			else
-				self.y=min(ground_y+3,self.y+0.1)
+				self.y=min(ground_y+3,self.y+spawn_speed)
 			end
 			self.is_above_ground=(self.y<=ground_y-1.5)
-			if self.frames_alive==80 then
+			if self.frames_alive==ternary(debug_mode,1,80) then
 				self:spawn_ball()
 			end
 		end,
@@ -891,6 +934,10 @@ function _init()
 	title_screen=spawn_entity("title_screen")
 	-- add new entities to the game
 	add_new_entities()
+	if debug_mode then
+		change_scene("title->game")
+		camera_operator.y=0
+	end
 end
 
 -- local skip_frames=0
