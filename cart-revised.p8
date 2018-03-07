@@ -51,6 +51,10 @@ render_layer:
 function noop() end
 
 local debug_mode=true
+local skip_rate=15
+local skip_rate_active=false
+local skip_frames
+
 local controllers={1,0}
 local catch_fudge=1
 local left_wall_x=1
@@ -77,6 +81,8 @@ local game_frame
 local screen_shake_frames
 local standstill_frames
 local occasional_ball_spawn_frames
+local next_occasional_ball_spawn
+local ball_speed_rating
 local entities
 local new_entities
 local jugglers
@@ -122,7 +128,14 @@ local entity_classes={
 			-- move horizontally when left/right buttons are pressed
 			self.move_x=ternary(buttons[controller][1],1,0)-
 				ternary(buttons[controller][0],1,0)
-			local move_speed=1+ternary(self.left_hand_ball,0,1)+ternary(self.right_hand_ball,0,1)
+			local move_speed
+			if self.left_hand_ball and self.right_hand_ball then
+				move_speed=1
+			elseif self.left_hand_ball or self.right_hand_ball then
+				move_speed=2
+			else
+				move_speed=4
+			end
 			self.vx=move_speed*self.move_x
 			-- don't move if forced to be stationary (during throws/catches)
 			if self.stationary_frames>0 then
@@ -140,7 +153,7 @@ local entity_classes={
 			end
 			-- throw balls
 			decrement_counter_prop(self,"throw_cooldown_frames")
-			if (buffered_button_presses[controller][4]>0 or buffered_button_presses[controller][5]>0) and self.throw_cooldown_frames<=0 then
+			if self.throw_cooldown_frames<=0  and (buffered_button_presses[controller][4]>0 or buffered_button_presses[controller][5]>0 or (debug_mode and (buttons[controller][4] or buttons[controller][5]))) then
 				buffered_button_presses[controller][4]=0
 				buffered_button_presses[controller][5]=0
 				local preferred_throw_hand=ternary(self.most_recent_catch_hand=="left","right","left")
@@ -161,16 +174,19 @@ local entity_classes={
 				local thrown_ball
 				if self.left_hand_ball and (preferred_throw_hand=="left" or not self.right_hand_ball) then
 					self.sprite_flipped=false
+					self:calc_sprite_num()
 					self:reposition_held_balls()
 					thrown_ball=self.left_hand_ball
 					self.left_hand_ball=nil
 				elseif self.right_hand_ball then
 					self.sprite_flipped=true
+					self:calc_sprite_num()
 					self:reposition_held_balls()
 					thrown_ball=self.right_hand_ball
 					self.right_hand_ball=nil
 				end
 				if thrown_ball then
+					-- figure out throw distance
 					local throw_dist=63
 					local ball_center=thrown_ball.x+thrown_ball.width/2
 					local landing_x=ball_center+self.throw_dir*throw_dist
@@ -181,7 +197,14 @@ local entity_classes={
 					if landing_x==mid(midpoint_x,landing_x,midpoint_x+4) then
 						throw_dist=self.throw_dir*(midpoint_x+4-ball_center)
 					end
-					thrown_ball:throw(self.throw_dir*throw_dist,80,20)
+					-- figure out throw duration
+					local throw_dur=mid(6,flr(150/(1+ball_speed_rating/3)),100)
+					-- figure out throw height
+					local throw_height=77
+					-- throw the ball!
+					thrown_ball:throw(self.throw_dir*throw_dist,throw_height,throw_dur)
+					-- balls travel faster and faster
+					ball_speed_rating+=1
 				end
 			end
 			-- catch balls
@@ -196,9 +219,9 @@ local entity_classes={
 							ball.spawner.held_ball=nil
 							ball.spawner=nil
 							ball.is_held_by_spawner=false
-							self.stationary_frames=max(2,self.stationary_frames)
+							self.stationary_frames=max(1,self.stationary_frames)
 						else
-							self.stationary_frames=max(3,self.stationary_frames)
+							self.stationary_frames=max(2,self.stationary_frames)
 						end
 						self.anim_frames=20
 						self.anim="catch"
@@ -233,16 +256,20 @@ local entity_classes={
 				self.anim=nil
 				self.sprite_flipped=not self.sprite_flipped
 			end
-			if self.anim=="catch" then
-				self.sprite_num=2
-			elseif self.anim=="throw" then
-				self.sprite_num=1
-			else
-				self.sprite_num=0
-			end
+			self:calc_sprite_num()
 			if not self.anim then
 				increment_counter_prop(self,"wiggle_frames")
-				if self.wiggle_frames>ternary(self.move_x==0,20,4) then
+				local wiggle_dur
+				if self.move_x==0 then
+					wiggle_dur=20
+				elseif self.left_hand_ball and self.right_hand_ball then
+					wiggle_dur=12
+				elseif self.left_hand_ball or self.right_hand_ball then
+					wiggle_dur=6
+				else
+					wiggle_dur=3
+				end
+				if self.wiggle_frames>wiggle_dur then
 					self.sprite_flipped=not self.sprite_flipped
 					self.wiggle_frames=0
 				end
@@ -255,13 +282,24 @@ local entity_classes={
 			pal(7,0)
 			draw_sprite(0,8+14*self.sprite_num,18,14,self.x,self.y-3,self.sprite_flipped)
 			-- draw hitboxes
-			-- pal()
-			-- if self.left_hand_hitbox then
-			-- 	rect(self.left_hand_hitbox.x+0.5,self.left_hand_hitbox.y+0.5,self.left_hand_hitbox.x+self.left_hand_hitbox.width-0.5,self.left_hand_hitbox.y+self.left_hand_hitbox.height-0.5,7)
-			-- end
-			-- if self.right_hand_hitbox then
-			-- 	rect(self.right_hand_hitbox.x+0.5,self.right_hand_hitbox.y+0.5,self.right_hand_hitbox.x+self.right_hand_hitbox.width-0.5,self.right_hand_hitbox.y+self.right_hand_hitbox.height-0.5,7)
-			-- end
+			if debug_mode then
+				pal()
+				if self.left_hand_hitbox then
+					rect(self.left_hand_hitbox.x+0.5,self.left_hand_hitbox.y+0.5,self.left_hand_hitbox.x+self.left_hand_hitbox.width-0.5,self.left_hand_hitbox.y+self.left_hand_hitbox.height-0.5,7)
+				end
+				if self.right_hand_hitbox then
+					rect(self.right_hand_hitbox.x+0.5,self.right_hand_hitbox.y+0.5,self.right_hand_hitbox.x+self.right_hand_hitbox.width-0.5,self.right_hand_hitbox.y+self.right_hand_hitbox.height-0.5,7)
+				end
+			end
+		end,
+		calc_sprite_num=function(self)
+			if self.anim=="catch" then
+				self.sprite_num=2
+			elseif self.anim=="throw" then
+				self.sprite_num=1
+			else
+				self.sprite_num=0
+			end
 		end,
 		calc_hand_hitboxes=function(self)
 			if self.left_hand_ball then
@@ -270,7 +308,7 @@ local entity_classes={
 				self.left_hand_hitbox={
 					x=self.x,
 					y=self.y+1,
-					width=6,
+					width=7,
 					height=self.height-1
 				}
 				if self.vx<0 then
@@ -292,9 +330,9 @@ local entity_classes={
 				self.right_hand_hitbox=nil
 			else
 				self.right_hand_hitbox={
-					x=self.x+self.width-6,
+					x=self.x+self.width-7,
 					y=self.y+1,
-					width=6,
+					width=7,
 					height=self.height-1
 				}
 				if self.vx>0 then
@@ -319,7 +357,7 @@ local entity_classes={
 			if self.sprite_num==2 then
 				lx,ly,rx,ry=7,2,7,8
 			elseif self.sprite_num==1 then
-				lx,ly,rx,ry=7,1,7,7
+				lx,ly,rx,ry=7,4,7,7
 			else
 				lx,ly,rx,ry=7,3,7,7
 			end
@@ -445,17 +483,28 @@ local entity_classes={
 			-- balls that hit the ground die
 			if not self.is_held_by_juggler and not self.is_held_by_spawner and self.y>=ground_y-self.height then
 				self:die()
-				spawn_entity("ball_sparks",self.x,nil,{color=self.color})
 				shake_screen(10)
 				local player_num=ternary(self.x+self.width/2<midpoint_x,1,2)
 				jugglers[player_num].score_track:add_mark(self.color)
 				local juggler=jugglers[player_num]
 				juggler.icon:show(juggler)
-				local ball_icon=spawn_entity("ball_icon",self.x,ground_y,{color=self.color})
+				-- fudge the number of where the ball landed, to help convince the player they missed it
+				-- shhhh don't tell, it's for the best! ;)
+				local landing_x=self.x-self.vx
+				if self.x+self.width/2<juggler.x+juggler.width/2 then
+					landing_x=max(landing_x-3,left_wall_x)
+				else
+					landing_x=min(landing_x+3,right_wall_x-self.width)
+				end
+				-- spawn an icon and an explosion of sparks where the ball landed
+				local ball_icon=spawn_entity("ball_icon",landing_x,ground_y,{color=self.color})
+				spawn_entity("ball_sparks",landing_x,nil,{color=self.color})
 				if #juggler.score_track.marks>=5 then
 					change_scene("game-end")
 				end
 			end
+			-- recalculate hurtboxes again
+			self:calc_hurtbox()
 		end,
 		draw=function(self)
 			-- each ball has a color
@@ -524,6 +573,11 @@ local entity_classes={
 					draw_sprite(sx,sy,sw,sh,x,y,flip_horizontal,flip_vertical)
 				end
 			end
+			-- draw the hurtbox
+			if debug_mode and self.hurtbox then
+				pal()
+				rect(self.hurtbox.x+0.5,self.hurtbox.y+0.5,self.hurtbox.x+self.hurtbox.width-0.5,self.hurtbox.y+self.hurtbox.height-0.5,7)
+			end
 		end,
 		throw=function(self,distance,height,duration)
 			self.is_held_by_juggler=false
@@ -578,22 +632,24 @@ local entity_classes={
 		init=function(self)
 			self.particles={}
 			local i
-			for i=1,30 do
+			for i=1,50 do
 				local x,y=self.x+self.width/2,self.y+self.height
-				local speed=0.8+1*rnd()
+				local speed=0.2+3*rnd()*rnd()
 				add(self.particles,{
 					x=x,
 					y=y,
 					prev_x=x,
 					prev_y=y,
-					vx=(rnd(3)-1.5)*speed,
-					vy=-9*speed
+					vx=(rnd(1.2)+rnd(1.2)-1.2)*speed,
+					vy=-7*speed,
+					visibile_frames=rnd_int(5,40)
 				})
 			end
 		end,
 		update=function(self)
 			foreach(self.particles,function(particle)
-				particle.vy+=0.2
+				particle.vy*=0.95
+				particle.vx*=0.95
 				particle.prev_x=particle.x
 				particle.prev_y=particle.y
 				particle.x+=particle.vx
@@ -602,8 +658,9 @@ local entity_classes={
 		end,
 		draw=function(self)
 			foreach(self.particles,function(particle)
-				-- pset(particle.x,particle.y,1)
-				line(particle.prev_x+0.5,particle.prev_y+0.5,particle.x+0.5,particle.y+0.5,self.color)
+				if self.frames_alive<particle.visibile_frames then
+					line(particle.prev_x+0.5,particle.prev_y+0.5,particle.x+0.5,particle.y+0.5,self.color)
+				end
 			end)
 		end
 	},
@@ -919,9 +976,12 @@ function _init()
 	buffered_button_presses={}
 	-- initialize game vars
 	game_frame=0
+	skip_frames=0
 	screen_shake_frames=0
 	standstill_frames=0
 	occasional_ball_spawn_frames=0
+	next_occasional_ball_spawn=1
+	ball_speed_rating=1
 	-- initialize entity vars
 	entities={}
 	new_entities={}
@@ -940,7 +1000,6 @@ function _init()
 	end
 end
 
--- local skip_frames=0
 function _update()
 	-- keep track of inputs (because btnp repeats presses)
 	local p
@@ -963,7 +1022,18 @@ function _update()
 			end
 		end
 	end
-	-- skip_frames+=1
+	-- in debug mode, press down to slow down the game
+	if debug_mode then
+		if button_presses[controllers[1]][3] or button_presses[controllers[2]][3] then
+			skip_rate_active=not skip_rate_active
+		end
+	end
+	if skip_rate_active then
+		skip_frames=increment_counter(skip_frames)
+		if skip_frames%skip_rate>0 then
+			return
+		end
+	end
 	-- if skip_frames%15>0 then return end
 	game_frame=increment_counter(game_frame)
 	screen_shake_frames=decrement_counter(screen_shake_frames)
@@ -992,8 +1062,11 @@ function _update()
 		-- spawn a ball every now and then to make things interesting
 		occasional_ball_spawn_frames=decrement_counter(occasional_ball_spawn_frames)
 		if occasional_ball_spawn_frames<=0 then
-			local player_num=rnd_int(1,2)
-			jugglers[player_num].spawner:spawn_ball()
+			if jugglers[next_occasional_ball_spawn].spawner:spawn_ball() then
+				next_occasional_ball_spawn=3-next_occasional_ball_spawn
+			else
+				jugglers[3-next_occasional_ball_spawn].spawner:spawn_ball()
+			end
 		end
 	end
 	-- sort entities for updating
@@ -1090,6 +1163,7 @@ function change_scene(s)
 	end
 	-- and then do stuff based on the scene
 	if scene=="title->game" then
+		ball_speed_rating=1
 		spawn_entity("juggler",8,ground_y-entity_classes.juggler.height,{
 			player_num=1,
 			min_x=left_wall_x,
@@ -1111,6 +1185,7 @@ function change_scene(s)
 	elseif scene=="game" then
 		standstill_frames=220
 		occasional_ball_spawn_frames=440
+		next_occasional_ball_spawn=rnd_int(1,2)
 	elseif scene=="game-end" then
 		spawn_entity("game_over_text_geysers")
 	end
