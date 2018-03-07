@@ -10,7 +10,6 @@ todo:
 	the title screen has a pretty title
 	the title screen has balls flying past
 	the title screen has music
-	balls spawn periodically, dependent on circumstances
 	balls can collide in mid-air
 	sound effects
 	there are plenty of wacky game modes to have fun with
@@ -74,6 +73,8 @@ local buffered_button_presses
 local scene
 local game_frame
 local screen_shake_frames
+local standstill_frames
+local occasional_ball_spawn_frames
 local entities
 local new_entities
 local jugglers
@@ -377,6 +378,11 @@ local entity_classes={
 		end,
 		remove_from_game=function(self)
 			del(balls,self)
+			if scene=="game" and #balls<=0 then
+				jugglers[1].spawner:spawn_ball()
+				jugglers[2].spawner:spawn_ball()
+				standstill_frames=280
+			end
 		end,
 		on_scene_change=function(self)
 			if scene=="game-end" then
@@ -394,7 +400,12 @@ local entity_classes={
 				else
 					self.bounce_dir=nil
 					self.vy+=self.gravity
+					local prev_x=self.x
 					self:apply_velocity()
+					-- if a ball goes across the midpoint, there's no standstill
+					if (prev_x<midpoint_x)!=(self.x<midpoint_x) then
+						standstill_frames=max(180,standstill_frames)
+					end
 					self:calc_hurtbox()
 					-- bounce off walls
 					if self.x<left_wall_x then
@@ -438,7 +449,7 @@ local entity_classes={
 				local juggler=jugglers[player_num]
 				juggler.icon:show(juggler)
 				local ball_icon=spawn_entity("ball_icon",self.x,ground_y,{color=self.color})
-				if #juggler.score_track.marks>=1 then
+				if #juggler.score_track.marks>=5 then
 					change_scene("game-end")
 				end
 			end
@@ -580,13 +591,13 @@ local entity_classes={
 		end,
 		update=function(self)
 			if self.held_ball then
-				self.y=max(ground_y-self.height,self.y-0.2)
+				self.y=max(ground_y-self.height,self.y-0.1)
 				self.held_ball.y=self.y-4
 			else
 				self.y=min(ground_y+3,self.y+0.1)
 			end
 			self.is_above_ground=(self.y<=ground_y-1.5)
-			if self.frames_alive%50==0 then
+			if self.frames_alive==80 then
 				self:spawn_ball()
 			end
 		end,
@@ -598,12 +609,15 @@ local entity_classes={
 			self.held_ball=nil
 		end,
 		spawn_ball=function(self)
-			if scene=="game" and not self.held_ball then
-				self.held_ball=spawn_entity("ball",self.x,self.y-4,{
-					is_held_by_spawner=true,
-					spawner=self,
-					color=ball_colors[rnd_int(1,#ball_colors)]
-				})
+			if scene=="game" then
+				occasional_ball_spawn_frames=440
+				if not self.held_ball then
+					self.held_ball=spawn_entity("ball",self.x,self.y-4,{
+						is_held_by_spawner=true,
+						spawner=self,
+						color=ball_colors[rnd_int(1,#ball_colors)]
+					})
+				end
 				return true
 			else
 				return false
@@ -860,16 +874,18 @@ function _init()
 	button_presses={}
 	button_releases={}
 	buffered_button_presses={}
-	-- start on the title screen
-	change_scene("title")
 	-- initialize game vars
 	game_frame=0
 	screen_shake_frames=0
+	standstill_frames=0
+	occasional_ball_spawn_frames=0
 	-- initialize entity vars
 	entities={}
 	new_entities={}
 	jugglers={}
 	balls={}
+	-- start on the title screen
+	change_scene("title")
 	-- create our starting entities
 	camera_operator=spawn_entity("camera_operator")
 	title_screen=spawn_entity("title_screen")
@@ -904,6 +920,35 @@ function _update()
 	-- if skip_frames%15>0 then return end
 	game_frame=increment_counter(game_frame)
 	screen_shake_frames=decrement_counter(screen_shake_frames)
+	if scene=="game" then
+		-- spawn a ball if there is ever a standstill
+		standstill_frames=decrement_counter(standstill_frames)
+		if standstill_frames<=0 then
+			-- count the number of balls on each side
+			local balls_per_player={0,0}
+			foreach(balls,function(ball)
+				if ball.x<midpoint_x then
+					balls_per_player[1]+=1
+				else
+					balls_per_player[2]+=1
+				end
+			end)
+			-- spawn a ball on each side if they have the same number of balls
+			if balls_per_player[1]<=balls_per_player[2] then
+				jugglers[1].spawner:spawn_ball()
+			end
+			if balls_per_player[1]>=balls_per_player[2] then
+				jugglers[2].spawner:spawn_ball()
+			end
+			standstill_frames=280
+		end
+		-- spawn a ball every now and then to make things interesting
+		occasional_ball_spawn_frames=decrement_counter(occasional_ball_spawn_frames)
+		if occasional_ball_spawn_frames<=0 then
+			local player_num=rnd_int(1,2)
+			jugglers[player_num].spawner:spawn_ball()
+		end
+	end
 	-- sort entities for updating
 	sort(entities,function(entity1,entity2)
 		return entity1.update_priority>entity2.update_priority
@@ -982,10 +1027,10 @@ function _draw()
 		end
 	end)
 	-- draw debug info
-	camera()
-	rect(0,0,127,127,3)
-	print("scene:    "..scene,3,3,3)
-	print("entities: "..#entities,3,10,3)
+	-- camera()
+	-- rect(0,0,127,127,3)
+	-- print("scene:    "..scene,3,3,3)
+	-- print("entities: "..#entities,3,10,3)
 end
 
 function change_scene(s)
@@ -1016,6 +1061,9 @@ function change_scene(s)
 			score_track=spawn_entity("score_track",76),
 			spawner=spawn_entity("ball_spawner",87,ground_y+3)
 		})
+	elseif scene=="game" then
+		standstill_frames=220
+		occasional_ball_spawn_frames=440
 	elseif scene=="game-end" then
 		spawn_entity("game_over_text_geysers")
 	end
