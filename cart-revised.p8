@@ -16,7 +16,7 @@ scenes:
 	game-end
 	game->title
 
-update_priority:
+update priority:
 	0:	ball_sparks
 	0.5:	ball_schwing
 	1:	juggler_icon
@@ -30,7 +30,7 @@ update_priority:
 	9:	title_screen
 	10:	camera_operator
 
-render_layer:
+render layers:
 	0:	ball_sparks
 	1:	game_over_text_geysers
 	1.5:	ball_schwing
@@ -43,11 +43,43 @@ render_layer:
 	13:	mode_select
 	14:	title_screen
 	15:	camera_operator
+
+sound efffects:
+	0:	rise (slow)
+	1:	rise (fast)
+	2:	rise (faster)
+	3:	rise (fastest)
+	4:	fall (slow)
+	5:	fall (fast)
+	6:	fall (faster)
+	7:	fall (fastest)
+	8:	drop
+	9:	pick up
+	10:	catch
+	11:	catch (faster)
+	12:	mid-air collision
+	13:	mid-air collision (faster)
+	14:	mid-air collision (fastest)
+...	15:	title->game
+...	16:	game-end 1
+...	17:	game-end 2
+...	18:	game->title 1
+...	19:	game->title 2
+...	20:	light explosion
+
+sound channels:
+	0:	--
+	1:	drop
+	2:	pick up, catch
+	3:	rise, fall, mid-air collision
+
+music:
+	--:	--
 ]]
 
 function noop() end
 
-local debug_mode=false
+local debug_mode=true
 local skip_rate=15
 local skip_rate_active=false
 local skip_frames
@@ -131,7 +163,7 @@ local entity_classes={
 			elseif self.left_hand_ball or self.right_hand_ball then
 				move_speed=2
 			else
-				move_speed=3
+				move_speed=4
 			end
 			self.vx=move_speed*self.move_x
 			-- don't move if forced to be stationary (during throws/catches)
@@ -197,7 +229,7 @@ local entity_classes={
 					-- figure out throw duration
 					local throw_dur=mid(6,flr(150/(1+ball_speed_rating/3)),100)
 					-- figure out throw height
-					local throw_height=mid(71,70+ball_speed_rating,120)
+					local throw_height=mid(71,70+flr(1.2*ball_speed_rating),120)
 					-- throw the ball!
 					thrown_ball:throw(self.throw_dir*throw_dist,throw_height,throw_dur)
 					-- balls travel faster and faster
@@ -217,8 +249,10 @@ local entity_classes={
 							ball.spawner=nil
 							ball.is_held_by_spawner=false
 							self.stationary_frames=max(2,self.stationary_frames)
+							sfx(9,2) -- pick up
 						else
 							self.stationary_frames=max(3,self.stationary_frames)
+							sfx(ternary(ball_speed_rating>25,11,10),2) -- catch
 						end
 						self.anim_frames=20
 						self.anim="catch"
@@ -418,6 +452,7 @@ local entity_classes={
 		is_held_by_juggler=false,
 		is_held_by_spawner=false,
 		color=7,
+		sound_level=1,
 		add_to_game=function(self)
 			add(balls,self)
 		end,
@@ -461,13 +496,20 @@ local entity_classes={
 					decrement_counter_prop(self,"freeze_frames")
 				else
 					self.bounce_dir=nil
+					local prev_vy=self.vy
 					self.vy+=self.gravity
 					self.prev_x,self.prev_y=self.x,self.y
 					-- apply velocity manualy
-					if self.y<ground_y-self.height then
+					self.y+=self.vy
+					if self.y>=ground_y-self.height then
+						self.x+=self.vx/3
+					else
 						self.x+=self.vx
 					end
-					self.y+=self.vy
+					-- play a falling sound
+					if prev_vy<=1 and self.vy>1 then
+						sfx(self.sound_level+3,3) -- fall
+					end
 					-- if a ball goes across the midpoint, there's no standstill
 					if (self.prev_x<midpoint_x)!=(self.x<midpoint_x) then
 						standstill_frames=max(180,standstill_frames)
@@ -525,6 +567,7 @@ local entity_classes={
 				-- spawn an icon and an explosion of sparks where the ball landed
 				local ball_icon=spawn_entity("ball_icon",landing_x,ground_y,{color=self.color})
 				spawn_entity("ball_sparks",landing_x,nil,{color=self.color})
+				sfx(8,1) -- drop
 				if #juggler.score_track.marks>=5 then
 					change_scene("game-end")
 				end
@@ -618,6 +661,17 @@ local entity_classes={
 			self.vx=distance/duration
 			-- calculate kinetic and potential energy
 			self.energy=self.vy*self.vy/2+self.gravity*(ground_y-self.y-self.height)
+			-- play a rising sound
+			if ball_speed_rating>=25 then
+				self.sound_level=4
+			elseif ball_speed_rating>=15 then
+				self.sound_level=3
+			elseif ball_speed_rating>=8 then
+				self.sound_level=2
+			else
+				self.sound_level=1
+			end
+			sfx(self.sound_level-1,3) -- rise
 		end,
 		catch=function(self)
 			self.is_held_by_juggler=true
@@ -1281,6 +1335,15 @@ function _update()
 								ball2.x,ball2.y=x2,y2
 								ball1.vx,ball2.vx=1.7*ball2.vx,1.7*ball1.vx
 								-- make a lil collision effect
+								local sound
+								if ball_speed_rating>20 then
+									sound=14
+								elseif ball_speed_rating>6 then
+									sound=13
+								else
+									sound=12
+								end
+								sfx(sound,3) -- mid-air collision
 								spawn_entity("ball_schwing",(x1+x2)/2-4,(y1+y2)/2-10,{
 									frames_to_death=max(3,freeze_frames),
 									flipped=((ball1.x<ball2.x and ball1.y>ball2.y) or (ball2.x<ball1.x and ball2.y>ball1.y)),
@@ -1351,10 +1414,11 @@ function _draw()
 		end
 	end)
 	-- draw debug info
-	-- camera()
-	-- rect(0,0,127,127,3)
-	-- print("scene:    "..scene,3,3,3)
-	-- print("entities: "..#entities,3,10,3)
+	camera()
+	rect(0,0,127,127,3)
+	print("scene:    "..scene,3,3,3)
+	print("entities: "..#entities,3,10,3)
+	print("speed:    "..ball_speed_rating,3,17,3)
 end
 
 function change_scene(s)
@@ -1684,3 +1748,32 @@ bbbbbaaaa00999008880fffff777ff00001ccccccccccccccccd0006bbbbb303bbbbbb0002888888
 000000000bbbbbbb000000aaaaaaaaaa000099999999999988888888888888882222222222222222222222222222222222222222222222222222222222224567
 000000000bbbbbbb000000aaaaaaaaaa0000999999999990088888888888888022222222222222222222222222222222222222222222222222222222222289ab
 00000000000bbbb00000000000aaaa0000000000000000000000000000000000222222222222222222222222222222222222222222222222222222222222cdef
+__sfx__
+010b00000b0100c0210e02113031180411d041210412404126041280412a0412b0412b0312b0212b0110000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010600000b0100c0210e02113031180411d041210412404126041280412a0412b0412b0312b0212b0110000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010400000b0100c0210e02113031180411d041210412404126041280412a0412b0412b0312b0212b0110000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010200000b0100c0210e02113031180411d041210412404126041280412a0412b0412b0312b0212b0110000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010b00002b0102b0212b0312a031280312603124031210311d03118021130210e0210c0210b0210b0110b01100000000000000000000000000000000000000000000000000000000000000000000000000000000
+010600002b0102b0212b0312a031280312603124031210311d03118021130210e0210c0210b0210b0110b01100000000000000000000000000000000000000000000000000000000000000000000000000000000
+010400002b0102b0212b0312a031280312603124031210311d03118021130210e0210c0210b0210b0110b01100000000000000000000000000000000000000000000000000000000000000000000000000000000
+010200002b0102b0212b0312a031280312603124031210311d03118021130210e0210c0210b0210b0110b01100000000000000000000000000000000000000000000000000000000000000000000000000000000
+0104000034640286311e24018231142310f2310d2310c2310a2310823107231042210322103211022110121100200002000020000200002000020000200002000020000200002000020000200002000020000200
+010400000c7300d751127511a73100700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700007000070000700
+010400001911113131151211e1112b111001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100
+010400001b12113131251313111100100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000000
+010400002d03033532335223352233512005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000000000000000000000000000000000000000000
+01040000270302d041335423353233532335223351233512335120050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000000000000000000000
+0104000023020270312d0513356233552335423353233522335123351233512335123351200500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
+010600002c1422c1422b1422a15229152281522715226152251522315222152201521e1421b142191421613213132171401713117121171110010000100001001713017121171110010000100001000010000100
+0107000024722287322b74224752287522b75224752287522b75224752287522b75224752287522b75224752287522b75224752287522b75224752287522b75224752287522b7522472228712007000070000700
+0107000000700007000070024722287522b75224752287522b75224752287522b752247522875200700007000070024752287522b752247522875200700007000070024752287120070000700007000070000700
+010600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000071420714208142091520a1520c1520e1521015213152
+0106000015152181521a1521e14220142231422513226132231402313123121231110010000100001002313023121231110000000000000000000000000000000000000000000000000000000000000000000000
+010800001c64010631046310462104611000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__music__
+04 00424344
+01 0d424344
+00 0e424344
+00 0f424344
+04 10424344
+
