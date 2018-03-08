@@ -4,9 +4,13 @@ __lua__
 
 --[[
 todo:
-	the title screen has music
+	the title screen has music?
 	there are plenty of wacky game modes to have fun with
 	show credits somewhere
+	display controls?
+	mode notification has one more stretch to it
+	footsteps
+	rainbow balls when spawning?
 
 scenes:
 	title
@@ -88,6 +92,7 @@ local skip_rate=15
 local skip_rate_active=false
 local skip_frames
 
+local ball_spawn_rate=1
 local controllers={1,0}
 local catch_fudge=1
 local left_wall_x=1
@@ -100,7 +105,7 @@ local dark_ball_colors={2,4,4,3,1}
 local modes={
 	"normal mode",
 	"bomb mode",
-	"cooperative mode",
+	-- "cooperative mode",
 	-- "strong arm mode","cooperative mode","bouncy ball mode",
 	-- "long arms mode","infiniball mode","hot potato mode","floaty mode",
 	-- "blackout mode","speedball mode",
@@ -259,15 +264,24 @@ local entity_classes={
 							ball.is_held_by_spawner=false
 							self.stationary_frames=max(2,self.stationary_frames)
 							sfx(9,2) -- pick up
+							self.anim_frames=20
+							self.anim="catch"
+							self.wiggle_frames=0
+							self.vx=0
+							self.throw_cooldown_frames=ternary(self.left_hand_ball or self.right_hand_ball,0,min(4,self.throw_cooldown_frames))
+						elseif mode=="bomb mode" then
+							mark_ball_dropped(ball)
+							is_catching_with_left_hand=false
+							is_catching_with_right_hand=false
 						else
 							self.stationary_frames=max(3,self.stationary_frames)
 							sfx(ternary(ball_speed_rating>25,11,10),2) -- catch
+							self.anim_frames=20
+							self.anim="catch"
+							self.wiggle_frames=0
+							self.vx=0
+							self.throw_cooldown_frames=ternary(self.left_hand_ball or self.right_hand_ball,0,min(4,self.throw_cooldown_frames))
 						end
-						self.anim_frames=20
-						self.anim="catch"
-						self.wiggle_frames=0
-						self.vx=0
-						self.throw_cooldown_frames=ternary(self.left_hand_ball or self.right_hand_ball,0,min(4,self.throw_cooldown_frames))
 					end
 					-- catch with the left hand if the right can't catch it or if the right is farther from the ball
 					if is_catching_with_left_hand and (not is_catching_with_right_hand or ball.x+ball.width/2<self.x+self.width/2) then
@@ -358,18 +372,20 @@ local entity_classes={
 					width=7,
 					height=self.height-1
 				}
-				if self.vx<0 then
-					self.left_hand_hitbox.x+=self.vx
-					self.left_hand_hitbox.width-=self.vx
-				else
-					self.left_hand_hitbox.x-=catch_fudge
-					self.left_hand_hitbox.width+=catch_fudge
-				end
-				if self.right_hand_ball then
-					if self.vx>0 then
-						self.left_hand_hitbox.width+=self.vx
+				if mode!="bomb mode" then
+					if self.vx<0 then
+						self.left_hand_hitbox.x+=self.vx
+						self.left_hand_hitbox.width-=self.vx
 					else
+						self.left_hand_hitbox.x-=catch_fudge
 						self.left_hand_hitbox.width+=catch_fudge
+					end
+					if self.right_hand_ball then
+						if self.vx>0 then
+							self.left_hand_hitbox.width+=self.vx
+						else
+							self.left_hand_hitbox.width+=catch_fudge
+						end
 					end
 				end
 			end
@@ -382,18 +398,20 @@ local entity_classes={
 					width=7,
 					height=self.height-1
 				}
-				if self.vx>0 then
-					self.right_hand_hitbox.width+=self.vx
-				else
-					self.right_hand_hitbox.width+=catch_fudge
-				end
-				if self.left_hand_ball then
-					if self.vx<0 then
-						self.right_hand_hitbox.x+=self.vx
-						self.right_hand_hitbox.width-=self.vx
+				if mode!="bomb mode" then
+					if self.vx>0 then
+						self.right_hand_hitbox.width+=self.vx
 					else
-						self.right_hand_hitbox.x-=catch_fudge
 						self.right_hand_hitbox.width+=catch_fudge
+					end
+					if self.left_hand_ball then
+						if self.vx<0 then
+							self.right_hand_hitbox.x+=self.vx
+							self.right_hand_hitbox.width-=self.vx
+						else
+							self.right_hand_hitbox.x-=catch_fudge
+							self.right_hand_hitbox.width+=catch_fudge
+						end
 					end
 				end
 			end
@@ -475,13 +493,13 @@ local entity_classes={
 						num_active_balls+=1
 					end
 				end)
-				if num_active_balls<=0 then
+				if num_active_balls<=0 and mode!="bomb mode" then
 					ball_speed_rating=max(1,flr(0.3*ball_speed_rating))
 				end
 				if #balls<=0 then
 					jugglers[1].spawner:spawn_ball()
 					jugglers[2].spawner:spawn_ball()
-					standstill_frames=280
+					standstill_frames=280/ball_spawn_rate
 				end
 			end
 		end,
@@ -521,7 +539,7 @@ local entity_classes={
 					end
 					-- if a ball goes across the midpoint, there's no standstill
 					if (self.prev_x<midpoint_x)!=(self.x<midpoint_x) then
-						standstill_frames=max(180,standstill_frames)
+						standstill_frames=max(180/ball_spawn_rate,standstill_frames)
 					end
 					self:calc_hurtbox()
 					-- bounce off walls
@@ -559,28 +577,7 @@ local entity_classes={
 		post_update=function(self)
 			-- balls that hit the ground die
 			if not self.is_held_by_juggler and not self.is_held_by_spawner and self.y>=ground_y-self.height then
-				self:die()
-				shake_screen(10)
-				local player_num=ternary(self.x+self.width/2<midpoint_x,1,2)
-				jugglers[player_num].score_track:add_mark(self.color)
-				local juggler=jugglers[player_num]
-				-- juggler.icon:show(juggler)
-				-- fudge the number of where the ball landed, to help convince the player they missed it
-				-- shhhh don't tell, it's for the best! ;)
-				local landing_x=self.x
-				if self.x+self.width/2<juggler.x+juggler.width/2 then
-					landing_x=max(landing_x-3,left_wall_x)
-				else
-					landing_x=min(landing_x+3,right_wall_x-self.width)
-				end
-				-- spawn an icon and an explosion of sparks where the ball landed
-				local ball_icon=spawn_entity("ball_icon",landing_x,ground_y,{color=self.color})
-				spawn_entity("ball_sparks",landing_x,nil,{color=self.color})
-				sfx(8,1) -- drop
-				if #juggler.score_track.marks>=5 then
-					music(2) -- game-end
-					change_scene("game-end")
-				end
+				mark_ball_dropped(self)
 			end
 			-- recalculate hurtboxes again
 			self:calc_hurtbox()
@@ -815,12 +812,16 @@ local entity_classes={
 		end,
 		spawn_ball=function(self)
 			if scene=="game" then
-				occasional_ball_spawn_frames=440
+				occasional_ball_spawn_frames=440/ball_spawn_rate
 				if not self.held_ball then
+					local color=ball_colors[rnd_int(1,#ball_colors)]
+					if mode=="bomb mode" then
+						color=5
+					end
 					self.held_ball=spawn_entity("ball",self.x,self.y-4,{
 						is_held_by_spawner=true,
 						spawner=self,
-						color=ball_colors[rnd_int(1,#ball_colors)]
+						color=color
 					})
 				end
 				return true
@@ -1328,7 +1329,7 @@ function _update()
 			if balls_per_player[1]>=balls_per_player[2] then
 				jugglers[2].spawner:spawn_ball()
 			end
-			standstill_frames=280
+			standstill_frames=280/ball_spawn_rate
 		end
 		-- spawn a ball every now and then to make things interesting
 		occasional_ball_spawn_frames=decrement_counter(occasional_ball_spawn_frames)
@@ -1479,6 +1480,47 @@ function _draw()
 	-- print("speed:    "..ball_speed_rating,3,17,3)
 end
 
+function mark_ball_dropped(ball)
+	ball:die()
+	local player_num=ternary(ball.x+ball.width/2<midpoint_x,1,2)
+	local juggler=jugglers[player_num]
+	-- juggler.icon:show(juggler)
+	-- fudge the number of where the ball landed, to help convince the player they missed it
+	-- shhhh don't tell, it's for the best! ;)
+	local landing_x=ball.x
+	if ball.x+ball.width/2<juggler.x+juggler.width/2 then
+		landing_x=max(landing_x-3,left_wall_x)
+	else
+		landing_x=min(landing_x+3,right_wall_x-ball.width)
+	end
+	-- spawn an icon and an explosion of sparks where the ball landed
+	local count_as_drop=true
+	if mode=="bomb mode" then
+		local dx=ball.x+ball.width/2-juggler.x-juggler.width/2
+		if abs(dx)>13 then
+			count_as_drop=false
+			-- todo different sound
+		end
+		spawn_entity("ball_schwing",ball.x,min(ball.y-9,ground_y-12),{
+			frames_to_death=ternary(count_as_drop,10,6),
+			flipped=rnd()<0.5,
+			is_big=true
+		})
+	else
+		local ball_icon=spawn_entity("ball_icon",landing_x,ground_y,{color=ball.color})
+	end
+	if count_as_drop then
+		spawn_entity("ball_sparks",landing_x,nil,{color=ball.color})
+		shake_screen(10)
+		jugglers[player_num].score_track:add_mark(ball.color)
+		sfx(8,1) -- drop
+		if #juggler.score_track.marks>=5 then
+			music(2) -- game-end
+			change_scene("game-end")
+		end
+	end
+end
+
 function change_scene(s)
 	-- inform all the entities
 	if scene!=s then
@@ -1500,6 +1542,7 @@ function change_scene(s)
 			spawn_entity("mode_notification")
 		end
 		ball_speed_rating=1
+		ball_spawn_rate=ternary(mode=="bomb mode",2,1)
 		spawn_entity("juggler",8,ground_y-entity_classes.juggler.height,{
 			player_num=1,
 			min_x=left_wall_x,
