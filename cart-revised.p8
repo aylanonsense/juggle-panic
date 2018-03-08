@@ -5,7 +5,6 @@ __lua__
 --[[
 todo:
 	the title screen has music
-	sound effects
 	there are plenty of wacky game modes to have fun with
 
 scenes:
@@ -60,11 +59,11 @@ sound efffects:
 	12:	mid-air collision
 	13:	mid-air collision (faster)
 	14:	mid-air collision (fastest)
-...	15:	title->game
-...	16:	game-end 1
-...	17:	game-end 2
-...	18:	game->title 1
-...	19:	game->title 2
+	15:	title->game
+	16:	game->title
+	17:	game-end 1
+	18:	game-end 2
+	19:	mode change
 ...	20:	light explosion
 
 sound channels:
@@ -74,12 +73,14 @@ sound channels:
 	3:	rise, fall, mid-air collision
 
 music:
-	--:	--
+	0:	title->game
+	1:	game->title
+	2:	game-end
 ]]
 
 function noop() end
 
-local debug_mode=true
+local debug_mode=false
 local skip_rate=15
 local skip_rate_active=false
 local skip_frames
@@ -568,7 +569,8 @@ local entity_classes={
 				local ball_icon=spawn_entity("ball_icon",landing_x,ground_y,{color=self.color})
 				spawn_entity("ball_sparks",landing_x,nil,{color=self.color})
 				sfx(8,1) -- drop
-				if #juggler.score_track.marks>=5 then
+				if #juggler.score_track.marks>=1 then
+					music(2) -- game-end
 					change_scene("game-end")
 				end
 			end
@@ -908,6 +910,7 @@ local entity_classes={
 				end
 			end
 			if scene=="title" and any_button_press then
+				music(0) -- title->game
 				change_scene("title->game")
 			end
 			-- spawn a ball every now and then
@@ -1058,6 +1061,7 @@ local entity_classes={
 			spr(right_arrow_sprite,self.x+90.5,self.y+0.5,1,1,true)
 		end,
 		next_mode=function(self)
+			sfx(19,3) -- mode change
 			self.last_mode_index=self.mode_index
 			self.last_mode_x=self.x
 			self.last_mode_dir=-1
@@ -1065,6 +1069,7 @@ local entity_classes={
 			self.mode_x=self.x+87
 		end,
 		prev_mode=function(self)
+			sfx(19,3) -- mode change
 			self.last_mode_index=self.mode_index
 			self.last_mode_x=self.x
 			self.last_mode_dir=1
@@ -1115,7 +1120,7 @@ local entity_classes={
 					add(self.messages,{
 						text=ternary(#juggler.score_track.marks>=5,"lose","win"),
 						x=juggler.x+juggler.width/2,
-						y=juggler.y+juggler.height/2,
+						y=ground_y,
 						vx=rnd(0.9)-0.45,
 						vy=-rnd(2.5)-4.5,
 						color=ball_colors[rnd_int(1,#ball_colors)]
@@ -1123,6 +1128,7 @@ local entity_classes={
 				end
 			end
 			if f==140 then
+				music(1) -- game->title
 				change_scene("game->title")
 			end
 		end,
@@ -1414,11 +1420,11 @@ function _draw()
 		end
 	end)
 	-- draw debug info
-	camera()
-	rect(0,0,127,127,3)
-	print("scene:    "..scene,3,3,3)
-	print("entities: "..#entities,3,10,3)
-	print("speed:    "..ball_speed_rating,3,17,3)
+	-- camera()
+	-- rect(0,0,127,127,3)
+	-- print("scene:    "..scene,3,3,3)
+	-- print("entities: "..#entities,3,10,3)
+	-- print("speed:    "..ball_speed_rating,3,17,3)
 end
 
 function change_scene(s)
@@ -1765,15 +1771,15 @@ __sfx__
 01040000270302d041335423353233532335223351233512335120050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000000000000000000000
 0104000023020270312d0513356233552335423353233522335123351233512335123351200500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500
 010600002c1422c1422b1422a15229152281522715226152251522315222152201521e1421b142191421613213132171401713117121171110010000100001001713017121171110010000100001000010000100
+01060000071420714208142091520a1520c1520e152101521315215152181521a1521e14220142231422513226132231402313123121231110010000100001002313023121231110000000000000000000000000
 0107000024722287322b74224752287522b75224752287522b75224752287522b75224752287522b75224752287522b75224752287522b75224752287522b75224752287522b7522472228712007000070000700
 0107000000700007000070024722287522b75224752287522b75224752287522b752247522875200700007000070024752287522b752247522875200700007000070024752287120070000700007000070000700
-010600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000071420714208142091520a1520c1520e1521015213152
-0106000015152181521a1521e14220142231422513226132231402313123121231110010000100001002313023121231110000000000000000000000000000000000000000000000000000000000000000000000
+000500001e0401e0211e0211e01100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 010800001c64010631046310462104611000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __music__
-04 00424344
-01 0d424344
-00 0e424344
-00 0f424344
+04 0f424344
+04 10424344
+01 11424344
+04 12424344
 04 10424344
 
