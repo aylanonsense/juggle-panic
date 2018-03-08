@@ -11,6 +11,9 @@ todo:
 	mode notification has one more stretch to it
 	footsteps
 	rainbow balls when spawning?
+	bomb sound effect
+	blackout mode sound effect
+	notification sound effect
 
 scenes:
 	title
@@ -22,6 +25,7 @@ scenes:
 
 update priority:
 	0:	ball_sparks
+	0:	stopwatch
 	0.5:	ball_schwing
 	0.75:	mode_notification
 	1:	juggler_icon
@@ -36,6 +40,7 @@ update priority:
 	10:	camera_operator
 
 render layers:
+	-2.0:	stopwatch
 	-1.0:	mode_notification
 	0:	ball_sparks
 	1:	game_over_text_geysers
@@ -105,11 +110,18 @@ local dark_ball_colors={2,4,4,3,1}
 local modes={
 	"normal mode",
 	"bomb mode",
-	-- "cooperative mode",
+	"blackout mode",
+	"cooperative mode",
 	-- "strong arm mode","cooperative mode","bouncy ball mode",
 	-- "long arms mode","infiniball mode","hot potato mode","floaty mode",
 	-- "blackout mode","speedball mode",
 	"random"
+}
+local tips={
+	{"first to drop","5 balls loses"},
+	nil,
+	nil,
+	{"survive for","40 seconds"}
 }
 
 local buttons
@@ -126,6 +138,7 @@ local next_occasional_ball_spawn
 local ball_speed_rating
 local rainbow_color_index
 local mode
+local tip
 local entities
 local new_entities
 local jugglers
@@ -799,8 +812,24 @@ local entity_classes={
 				self.y=min(ground_y+3,self.y+spawn_speed)
 			end
 			self.is_above_ground=(self.y<=ground_y-1.5)
-			if self.frames_alive==ternary(debug_mode,1,80) then
+			if self.frames_alive==ternary(debug_mode,1,80) and mode!="cooperative mode" then
 				self:spawn_ball()
+			end
+			-- in cooperative mode, balls are flung into the air
+			if mode=="cooperative mode" then
+				if self.frames_alive%280==120 then
+					self:spawn_ball()
+				end
+				if self.held_ball and self.is_above_ground then
+					self.held_ball.spawner=nil
+					self.held_ball.is_held_by_spawner=false
+					-- figure out throw duration
+					local throw_dur=mid(6,flr(150/(1+ball_speed_rating/3)),100)
+					-- figure out throw height
+					local throw_height=mid(71,70+flr(1.2*ball_speed_rating),120)
+					self.held_ball:throw(0,throw_height,throw_dur)
+					self.held_ball=nil
+				end
 			end
 		end,
 		draw=function(self)
@@ -1146,6 +1175,40 @@ local entity_classes={
 			end)
 		end
 	},
+	stopwatch={
+		update_priority=0,
+		render_layer=-2,
+		x=56,
+		y=14,
+		width=14,
+		height=17,
+		on_scene_change=function(self)
+			if scene=="title" then
+				self:die()
+			end
+		end,
+		update=function(self)
+			if scene=="game" and self.frames_alive==1496 then
+				change_scene("game-end")
+			end
+		end,
+		draw=function(self)
+			if self.frames_alive>296 then
+				local seconds=flr((self.frames_alive-296)/30)
+				local i
+				for i=1,8 do
+					local show_red=seconds>5*i
+					if self.frames_alive>=1496 then
+						show_red=self.frames_alive%20<10
+					end
+					pal(i+7,ternary(show_red,8,7))
+				end
+				pal(1,8)
+				pal(5,13)
+				draw_sprite(104,104,14,17,self.x,self.y)
+			end
+		end
+	},
 	speedometer={
 		update_priority=0,
 		render_layer=16,
@@ -1200,7 +1263,6 @@ local entity_classes={
 		y=20,
 		width=72,
 		height=28,
-		frames_to_death=220,
 		draw=function(self)
 			local f=self.frames_alive-80
 			local f2=self.frames_to_death
@@ -1226,11 +1288,16 @@ local entity_classes={
 					draw_sprite(116,76,9,28,self.x+60-6*i,self.y)
 				end
 				draw_sprite(125,76,3,28,self.x+69,self.y)
-				print("activated",self.x+self.width/2-18.5,self.y+16.5-1,0)
-				if f%30<22 then
-					print("!",self.x+self.width/2+17.5,self.y+16.5-1,0)
+				if mode and (f<100 or not tip) then
+					print("activated",self.x+self.width/2-18.5,self.y+15.5,0)
+					if f%30<22 then
+						print("!",self.x+self.width/2+17.5,self.y+15.5,0)
+					end
+					print(mode,self.x+self.width/2-2*#mode+0.5,self.y+8.5,0)
+				elseif not mode or f>105 then
+					print(tip[1],self.x+self.width/2-2*#tip[1]+0.5,self.y+8.5,0)
+					print(tip[2],self.x+self.width/2-2*#tip[2]+0.5,self.y+15.5,0)
 				end
-				print(mode,self.x+self.width/2-2*#mode+0.5,self.y+10.5-2,0)
 			end
 		end
 	}
@@ -1309,7 +1376,7 @@ function _update()
 	-- if skip_frames%15>0 then return end
 	game_frame=increment_counter(game_frame)
 	screen_shake_frames=decrement_counter(screen_shake_frames)
-	if scene=="game" then
+	if scene=="game" and mode!="cooperative mode" then
 		-- spawn a ball if there is ever a standstill
 		standstill_frames=decrement_counter(standstill_frames)
 		if standstill_frames<=0 then
@@ -1448,6 +1515,9 @@ function _draw()
 	rectfill(l,109.5,r,127.5,2)
 	pset(l,sky_y+0.5,0)
 	pset(r,sky_y+0.5,0)
+	if mode=="blackout mode" and (game_frame==50 or game_frame==65 or game_frame>70) then
+		cls(0)
+	end
 	-- draw each entity
 	foreach(entities,function(entity)
 		if entity.render_layer<10 then
@@ -1515,7 +1585,6 @@ function mark_ball_dropped(ball)
 		jugglers[player_num].score_track:add_mark(ball.color)
 		sfx(8,1) -- drop
 		if #juggler.score_track.marks>=5 then
-			music(2) -- game-end
 			change_scene("game-end")
 		end
 	end
@@ -1531,6 +1600,7 @@ function change_scene(s)
 	end
 	-- and then do stuff based on the scene
 	if scene=="title->game" then
+		game_frame=0
 		if title_screen.mode_select.mode_index==1 then
 			mode=nil
 		elseif title_screen.mode_select.mode_index==#modes then
@@ -1538,18 +1608,27 @@ function change_scene(s)
 		else
 			mode=modes[title_screen.mode_select.mode_index]
 		end
-		if mode then
-			spawn_entity("mode_notification")
-		end
+		tip=tips[title_screen.mode_select.mode_index]
+		spawn_entity("mode_notification",nil,nil,{
+			frames_to_death=ternary(tip and mode,300,220),
+		})
 		ball_speed_rating=1
 		ball_spawn_rate=ternary(mode=="bomb mode",2,1)
+		local score_track1,score_track2
+		if mode=="cooperative mode" then
+			score_track1=spawn_entity("score_track",45)
+			score_track2=score_track1
+		else
+			score_track1=spawn_entity("score_track",7)
+			score_track2=spawn_entity("score_track",83)
+		end
 		spawn_entity("juggler",8,ground_y-entity_classes.juggler.height,{
 			player_num=1,
 			min_x=left_wall_x,
 			max_x=midpoint_x,
 			throw_dir=1,
 			icon=spawn_entity("juggler_icon"),
-			score_track=spawn_entity("score_track",7),
+			score_track=score_track1,
 			spawner=spawn_entity("ball_spawner",36,ground_y+3)
 		})
 		spawn_entity("juggler",102,ground_y-entity_classes.juggler.height,{
@@ -1558,15 +1637,20 @@ function change_scene(s)
 			max_x=right_wall_x,
 			throw_dir=-1,
 			icon=spawn_entity("juggler_icon"),
-			score_track=spawn_entity("score_track",83),
+			score_track=score_track2,
 			spawner=spawn_entity("ball_spawner",87,ground_y+3)
 		})
-		spawn_entity("speedometer")
+		if mode=="cooperative mode" then
+			spawn_entity("stopwatch")
+		else
+			spawn_entity("speedometer")
+		end
 	elseif scene=="game" then
 		standstill_frames=220
 		occasional_ball_spawn_frames=440
 		next_occasional_ball_spawn=rnd_int(1,2)
 	elseif scene=="game-end" then
+		music(2) -- game-end
 		spawn_entity("game_over_text_geysers")
 	end
 end
@@ -1835,23 +1919,23 @@ bbbbbaaaa00999008880fffff777ff00001ccccccccccccccccd0006bbbbb303bbbbbb0002888888
 000000bbbb00000aaaaa0000009999900000088888002222222222222222222222222222222222222222222222222222222222222222222222220a11111111a0
 000000000000000aaaa00000009999000000088800002222222222222222222222222222222222222222222222222222222222222222222222220aa111111aa0
 000000000000000aa000000009999000000088800000222222222222222222222222222222222222222222222222222222222222222222222222000aaaaaa000
-0000000000000000000000000990000000088800000022222222222222222222222222222222222222222222222222222222222222222222222222000aaaa000
-000000000000000000000000000000000088800000002222222222222222222222222222222222222222222222222222222222222222222222222200a1111a00
-00000000000000000000000000000000088800000000222222222222222222222222222222222222222222222222222222222222222222222222220a111111a0
-00000000000000000000000000000000088000000000222222222222222222222222222222222222222222222222222222222222222222222222220a111111a0
-0000000000bbb0000000000aaa00000000009990000000000888222222222222222222222222222222222222222222222222222222222222222222a11111111a
-00000000bbbbb00000000aaaaa00000000999990000000088888222222222222222222222222222222222222222222222222222222222222222222a11111111a
-0000000bbbbbb0000000aaaaaa00000009999900000000888880222222222222222222222222222222222222222222222222222222222222222222a111aa111a
-0000000bbbbb0000000aaaaaa000000999999000000088888800222222222222222222222222222222222222222222222222222222222222222222a11aaaa11a
-0000000bbbb0000000aaaaa00000009999900000008888880000222222222222222222222222222222222222222222222222222222222222222222a11aaaa11a
-000000000000000000aaa0000000099999000000088888800000222222222222222222222222222222222222222222222222222222222222222222a11aaaa11a
-0000000000000000000000000000099900000000888880000000222222222222222222222222222222222222222222222222222222222222222222a11aaaa11a
-0000000000000000000000000000000000000008888000000000222222222222222222222222222222222222222222222222222222222222222222a11aaaa11a
-0000000000000000000000000000000000000008800000000000222222222222222222222222222222222222222222222222222222222222222222a11aaaa11a
-00000000000bbb000000000000aaa000000000000099000000000000888022222222222222222222222222222222222222222222222222222222220a11aa11a0
-000000000bbbbbb000000000aaaaaa00000000099999900000000088888822222222222222222222222222222222222222222222222222222222220a11aa11a0
-00000000bbbbbbb0000000aaaaaaaa00000009999999900000088888888022222222222222222222222222222222222222222222222222222222220a11aa11a0
-00000000bbbbbb0000000aaaaaaaa000000999999999000088888888800022222222222222222222222222222222222222222222222222222222220a11aa11a0
+0000000000000000000000000990000000088800000022222222222222222222222222222222222222222222222222222222222200000567600000000aaaa000
+000000000000000000000000000000000088800000002222222222222222222222222222222222222222222222222222222222220000056760000000a1111a00
+00000000000000000000000000000000088800000000222222222222222222222222222222222222222222222222222222222222000000550000000a111111a0
+00000000000000000000000000000000088000000000222222222222222222222222222222222222222222222222222222222222000066666600660a111111a0
+0000000000bbb0000000000aaa00000000009990000000000888222222222222222222222222222222222222222222222222222200666ff1866656a11111111a
+00000000bbbbb00000000aaaaa000000009999900000000888882222222222222222222222222222222222222222222222222222066efff1888660a11111111a
+0000000bbbbbb0000000aaaaaa00000009999900000000888880222222222222222222222222222222222222222222222222222206eeeff1888860a111aa111a
+0000000bbbbb0000000aaaaaa000000999999000000088888800222222222222222222222222222222222222222222222222222266eeeff1888966a11aaaa11a
+0000000bbbb0000000aaaaa0000000999990000000888888000022222222222222222222222222222222222222222222222222225eeeeef1899996a11aaaa11a
+000000000000000000aaa000000009999900000008888880000022222222222222222222222222222222222222222222222222225dddeee1999996a11aaaa11a
+000000000000000000000000000009990000000088888000000022222222222222222222222222222222222222222222222222225dddddcaaa9996a11aaaa11a
+000000000000000000000000000000000000000888800000000022222222222222222222222222222222222222222222222222225ddddccbaaaaa6a11aaaa11a
+0000000000000000000000000000000000000008800000000000222222222222222222222222222222222222222222222222222255dccccbbaaa66a11aaaa11a
+00000000000bbb000000000000aaa00000000000009900000000000088802222222222222222222222222222222222222222222205ccccbbbaaa600a11aa11a0
+000000000bbbbbb000000000aaaaaa00000000099999900000000088888822222222222222222222222222222222222222222222055cccbbbba6600a11aa11a0
+00000000bbbbbbb0000000aaaaaaaa0000000999999990000008888888802222222222222222222222222222222222222222222200555cbbb666000a11aa11a0
+00000000bbbbbb0000000aaaaaaaa000000999999999000088888888800022222222222222222222222222222222222222222222000055566600000a11aa11a0
 000000000bbb000000000aaaaaa000000099999990000088888888000000222222222222222222222222222222222222222222222222222222222200a1aa1a00
 000000000000000000000aaa00000000009999000000008888800000000022222222222222222222222222222222222222222222222222222222222222222222
 00000000000bbb00000000000000aa00000000000000000000000000000000002222222222222222222222222222222222222222222222222222222222222222
