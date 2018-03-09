@@ -3,12 +3,11 @@ version 16
 __lua__
 
 --[[
-todo:
-	the title screen has music?
-	there are plenty of wacky game modes to have fun with
-	show credits somewhere
-	display controls?
-	mode notification has one more stretch to it
+the big todos are:
+	title music
+	controls / instructions
+	credits
+other todos:
 	footsteps
 	blackout mode sound effect
 	ball wallbounce sound effect
@@ -26,7 +25,7 @@ update priority:
 	0:	stopwatch
 	0.5:	ball_schwing
 	0.75:	mode_notification
-	1:	juggler_icon
+	1:	--
 	2:	ball_icon
 	3:	score_track
 	4:	ball_spawner
@@ -47,7 +46,7 @@ render layers:
 	3:	ball_spawner
 	4:	juggler
 	10:	score_track
-	11:	juggler_icon
+	11:	--
 	12:	ball_icon
 	13:	mode_select
 	14:	title_screen
@@ -119,8 +118,8 @@ local modes={
 	"bodybuilder mode",
 	"pong mode",
 	"leapfrog mode",
-	-- 10	unicycles + hot potato
-	-- 11	
+	"avant-garde mode",
+	-- 11	unicycles + hot potato
 	-- 12	credits?
 
 	-- best ideas
@@ -322,6 +321,9 @@ local entity_classes={
 					local throw_dur=mid(6,flr(150/(1+ball_speed_rating/3)),100)
 					-- figure out throw height
 					local throw_height=mid(71,70+flr(1.2*ball_speed_rating),120)
+					if mode=="avant-garde mode" then
+						throw_height=100
+					end
 					-- throw the ball!
 					thrown_ball:throw(self.throw_dir*throw_dist,throw_height,throw_dur)
 					-- balls travel faster and faster
@@ -422,7 +424,7 @@ local entity_classes={
 			if mode=="pong mode" then
 				rectfill(self.x+0.5,self.y-3.5,self.x+self.width-0.5,self.y-1.5,7)
 			else
-				pal(7,0)
+				pal(7,ternary(mode=="leapfrog mode",3,0))
 			end
 			if mode=="bodybuilder mode" then
 				pal(1,0)
@@ -469,7 +471,7 @@ local entity_classes={
 					x=self.x,
 					y=self.y+1,
 					width=7,
-					height=self.height-1
+					height=self.height+ternary(mode=="leapfrog mode",15,-1)
 				}
 				if mode!="bomb mode" then
 					if self.vx<0 then
@@ -495,7 +497,7 @@ local entity_classes={
 					x=self.x+self.width-7,
 					y=self.y+1,
 					width=7,
-					height=self.height-1
+					height=self.height+ternary(mode=="leapfrog mode",15,-1)
 				}
 				if mode!="bomb mode" then
 					if self.vx>0 then
@@ -538,33 +540,6 @@ local entity_classes={
 				self.right_hand_ball.x=self.x+self.width/2+rx+2-self.right_hand_ball.width+bonus_x
 				self.right_hand_ball.y=self.y+ry-self.right_hand_ball.height
 			end
-		end
-	},
-	juggler_icon={
-		update_priority=1,
-		render_layer=11,
-		y=ground_y+1,
-		width=18,
-		height=3,
-		visibility_frames=0,
-		on_scene_change=function(self)
-			if scene=="title" then
-				self:die()
-			end
-		end,
-		update=function(self)
-			decrement_counter_prop(self,"visibility_frames")
-		end,
-		draw=function(self)
-			if self.visibility_frames>0 then
-				line(self.x+0.5,self.y+0.5,self.x+0.5,self.y+self.height-0.5,1)
-				line(self.x+0.5,self.y+1.5,self.x+self.width-0.5,self.y+1.5,1)
-				line(self.x+self.width-0.5,self.y+0.5,self.x+self.width-0.5,self.y+self.height-0.5,1)
-			end
-		end,
-		show=function(self,juggler)
-			self.x=juggler.x
-			self.visibility_frames=90
 		end
 	},
 	ball={
@@ -856,7 +831,7 @@ local entity_classes={
 		init=function(self)
 			self.particles={}
 			local i
-			for i=1,50 do
+			for i=1,ternary(mode=="avant-garde mode",200,50) do
 				local x,y=self.x+self.width/2,self.y+self.height
 				local speed=0.2+3*rnd()*rnd()
 				add(self.particles,{
@@ -864,7 +839,7 @@ local entity_classes={
 					y=y,
 					prev_x=x,
 					prev_y=y,
-					vx=(rnd(1.2)+rnd(1.2)-1.2)*speed,
+					vx=ternary(mode=="avant-garde mode",3,1)*(rnd(1.2)+rnd(1.2)-1.2)*speed,
 					vy=-7*speed,
 					visibile_frames=rnd_int(5,40)
 				})
@@ -1663,16 +1638,19 @@ function _draw()
 	-- shake the screen
 	local screen_shake_y=-ceil(screen_shake_frames/2)*sin(screen_shake_frames/2.1)
 	camera(0,screen_shake_y+camera_operator.y)
-	-- clear the screen
-	cls()
-	-- draw the sky
 	local l,r=left_wall_x+0.5,right_wall_x-0.5
-	rectfill(l,sky_y+0.5,r,127.5,1)
-	rectfill(l,32.5,r,127.5,13)
-	rectfill(l,39.5,r,127.5,12)
-	rectfill(l,65.5,r,127.5,11)
-	rectfill(l,85.5,r,127.5,10)
-	rectfill(l,96.5,r,127.5,9)
+	if mode!="avant-garde mode" or game_frame<100 then
+		-- clear the screen
+		cls()
+		-- draw the sky
+		rectfill(l,sky_y+0.5,r,127.5,1)
+		rectfill(l,32.5,r,127.5,13)
+		rectfill(l,39.5,r,127.5,12)
+		rectfill(l,65.5,r,127.5,11)
+		rectfill(l,85.5,r,127.5,10)
+		rectfill(l,96.5,r,127.5,9)
+	end
+	rectfill(l,103.5,r,127.5,9)
 	rectfill(l,104.5,r,127.5,8)
 	rectfill(l,109.5,r,127.5,2)
 	pset(l,sky_y+0.5,0)
@@ -1723,7 +1701,6 @@ function mark_ball_dropped(ball)
 	ball:die()
 	local player_num=ternary(ball.x+ball.width/2<midpoint_x,1,2)
 	local juggler=jugglers[player_num]
-	-- juggler.icon:show(juggler)
 	-- fudge the number of where the ball landed, to help convince the player they missed it
 	-- shhhh don't tell, it's for the best! ;)
 	local landing_x=ball.x
@@ -1820,7 +1797,6 @@ function change_scene(s)
 			min_x=left_wall_x,
 			max_x=midpoint_x,
 			throw_dir=1,
-			icon=spawn_entity("juggler_icon"),
 			score_track=score_track1,
 			spawner=spawner1
 		})
@@ -1830,7 +1806,6 @@ function change_scene(s)
 			min_x=midpoint_x,
 			max_x=right_wall_x,
 			throw_dir=-1,
-			icon=spawn_entity("juggler_icon"),
 			score_track=score_track2,
 			spawner=spawner2
 		})
