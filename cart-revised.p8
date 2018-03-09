@@ -118,14 +118,16 @@ local modes={
 	"speedball mode",
 	"bodybuilder mode",
 	"pong mode",
+	"leapfrog mode",
+	-- 10	unicycles + hot potato
+	-- 11	
+	-- 12	credits?
 
 	-- best ideas
 		-- umbrellas + unicycles
 		-- frog
 		-- duck hunt
-		-- pong mode
 
-	-- pong
 	-- hoops
 	-- final destination / fox only
 	-- pinball
@@ -144,7 +146,6 @@ local modes={
 	-- "frame perfect dodges"
 	-- infiniball
 	-- bouncy ball
-	-- hot potato
 	-- floaty
 	-- step-by-step
 	"random"
@@ -221,6 +222,7 @@ local entity_classes={
 		update=function(self)
 			local controller=controllers[self.player_num]
 			-- move horizontally when left/right buttons are pressed
+			local is_touching_ground=(self.y>=ground_y-self.height)
 			self.move_x=ternary(buttons[controller][1],1,0)-
 				ternary(buttons[controller][0],1,0)
 			local move_speed
@@ -234,13 +236,28 @@ local entity_classes={
 			if mode=="bodybuilder mode" then
 				move_speed=2
 			end
-			self.vx=move_speed*self.move_x
-			-- don't move if forced to be stationary (during throws/catches)
-			if self.stationary_frames>0 then
-				self.vx=0
+			if mode=="leapfrog mode" then
+				if is_touching_ground then
+					if self.move_x==0 then
+						self.vx=0
+					else
+						self.vx=move_speed*self.move_x
+						self.vy=-12.5
+					end
+				end
+				self.vy+=2
+			else
+				self.vx=move_speed*self.move_x
+				-- don't move if forced to be stationary (during throws/catches)
+				if self.stationary_frames>0 then
+					self.vx=0
+				end
 			end
 			decrement_counter_prop(self,"stationary_frames")
 			self:apply_velocity()
+			if mode=="leapfrog mode" then
+				self.y=min(ground_y-self.height,self.y)
+			end
 			-- keep the juggler in bounds
 			if self.x<self.min_x then
 				self.x=self.min_x
@@ -264,7 +281,9 @@ local entity_classes={
 					self.anim="throw"
 					self.anim_frames=20
 					self.wiggle_frames=0
-					self.vx=0
+					if mode!="leapfrog mode" then
+						self.vx=0
+					end
 					self.stationary_frames=max(6,self.stationary_frames)
 					self.throw_cooldown_frames=4
 				end
@@ -328,7 +347,9 @@ local entity_classes={
 							self.anim_frames=20
 							self.anim="catch"
 							self.wiggle_frames=0
-							self.vx=0
+							if mode!="leapfrog mode" then
+								self.vx=0
+							end
 							self.throw_cooldown_frames=ternary(self.left_hand_ball or self.right_hand_ball,0,min(4,self.throw_cooldown_frames))
 						elseif mode=="bomb mode" then
 							mark_ball_dropped(ball)
@@ -340,7 +361,9 @@ local entity_classes={
 							self.anim_frames=20
 							self.anim="catch"
 							self.wiggle_frames=0
-							self.vx=0
+							if mode!="leapfrog mode" then
+								self.vx=0
+							end
 							self.throw_cooldown_frames=ternary(self.left_hand_ball or self.right_hand_ball,0,min(4,self.throw_cooldown_frames))
 						end
 					end
@@ -362,7 +385,7 @@ local entity_classes={
 				end
 			end
 			-- calc render data
-			if self.anim and self.vx!=0 then
+			if self.anim and self.vx!=0 and mode!="leapfrog mode" then
 				self.anim_frames=0
 				self.anim=nil
 				self.sprite_flipped=not self.sprite_flipped
@@ -1781,8 +1804,9 @@ function change_scene(s)
 			spawner1=spawn_entity("ball_spawner",61,ground_y+3)
 			spawner2=spawner1
 		else
-			spawner1=spawn_entity("ball_spawner",33,ground_y+3)
-			spawner2=spawn_entity("ball_spawner",90,ground_y+3)
+			local spawner_dx=ternary(mode=="leapfrog mode",15,0)
+			spawner1=spawn_entity("ball_spawner",33+spawner_dx,ground_y+3)
+			spawner2=spawn_entity("ball_spawner",90-spawner_dx,ground_y+3)
 		end
 		max_marks=5
 		if mode=="sudden death" then
