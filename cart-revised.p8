@@ -18,36 +18,38 @@ scenes:
 	game->title
 
 update priority:
-	0:	ball_sparks
-	0:	stopwatch
-	0.5:	ball_schwing
-	0.75:	mode_notification
-	1:	--
-	2:	ball_icon
-	3:	score_track
-	4:	ball_spawner
-	5:	juggler
-	6:	ball
-	7:	game_over_text_geysers
-	8:	mode_select
-	9:	title_screen
-	10:	camera_operator
+	1:	ball_sparks
+	2:	stopwatch
+	3:	ball_schwing
+	4:	mode_notification
+	5:	ball_icon
+	6:	score_track
+	7:	ball_spawner
+	8:	ball
+	9:	juggler
+	10:	game_over_text_geysers
+	11:	mode_select
+	12:	title_screen
+	13:	camera_operator
+	14:	controls
+	15:	speedometer
 
 render layers:
-	-2.0:	stopwatch
-	-1.0:	mode_notification
-	0:	ball_sparks
-	1:	game_over_text_geysers
-	1.5:	ball_schwing
-	2:	ball
-	3:	ball_spawner
-	4:	juggler
+	1:	stopwatch
+	2:	ball_sparks
+	3:	controls
+	4:	mode_notification
+	5:	game_over_text_geysers
+	6:	ball_schwing
+	7:	ball
+	8:	ball_spawner
+	9:	juggler
 	10:	score_track
-	11:	--
-	12:	ball_icon
-	13:	mode_select
-	14:	title_screen
-	15:	camera_operator
+	11:	ball_icon
+	12:	mode_select
+	13:	title_screen
+	14:	camera_operator
+	15:	speedometer
 
 sound efffects:
 	0:	rise (slow)
@@ -86,10 +88,8 @@ sound channels:
 	3:	rise, fall, mid-air collision, blackout static
 
 music:
-	0:	--
-	1:	--
-	2:	game-end
-	4:	title
+	2:	game end "music"
+	4:	title screen music
 ]]
 
 function noop() end
@@ -118,35 +118,6 @@ local modes={
 	"leapfrog mode",
 	"avant-garde mode",
 	"credits",
-	-- 11	unicycles + hot potato
-	-- 12	credits?
-	-- final destination might be good if people are annoyed by the colors
-
-	-- best ideas
-		-- umbrellas + unicycles
-		-- frog
-		-- duck hunt
-
-	-- hoops
-	-- final destination / fox only
-	-- pinball
-	-- golf
-	-- duck hunt
-	-- pachinko
-	-- trivia
-	-- credits
-	-- spider
-	-- bleen mode / disco mode
-	-- breakout
-	-- boring
-	-- rectangle mode
-	-- creative mode (making art)
-	-- fireworks mode
-	-- "frame perfect dodges"
-	-- infiniball
-	-- bouncy ball
-	-- floaty
-	-- step-by-step
 	"random"
 }
 local tips={
@@ -188,8 +159,8 @@ local camera_operator
 
 local entity_classes={
 	juggler={
-		update_priority=6,
-		render_layer=4,
+		update_priority=9,
+		render_layer=9,
 		width=18,
 		height=11,
 		move_x=0,
@@ -474,7 +445,7 @@ local entity_classes={
 					x=self.x,
 					y=self.y+1,
 					width=7,
-					height=self.height+ternary(mode=="leapfrog mode",15,-1)
+					height=self.height+ternary(mode=="leapfrog mode",max(0,-self.vx),-1)
 				}
 				if mode!="bomb mode" then
 					if self.vx<0 then
@@ -546,8 +517,8 @@ local entity_classes={
 		end
 	},
 	ball={
-		update_priority=5,
-		render_layer=2,
+		update_priority=8,
+		render_layer=7,
 		width=5,
 		height=5,
 		gravity=0,
@@ -590,7 +561,7 @@ local entity_classes={
 			self.id=next_ball_id
 			next_ball_id=increment_counter(next_ball_id)
 			if mode=="credits" then
-				self.render_layer=5
+				self.render_layer=9.5
 				self.color=ternary(credits_messages[self.id]=="love",8,7)
 			end
 			self:calc_hurtbox()
@@ -833,8 +804,8 @@ local entity_classes={
 		end
 	},
 	ball_sparks={
-		update_priority=0,
-		render_layer=0,
+		update_priority=1,
+		render_layer=2,
 		y=ground_y-5,
 		width=5,
 		height=5,
@@ -875,8 +846,8 @@ local entity_classes={
 		end
 	},
 	ball_schwing={
-		update_priority=0.5,
-		render_layer=1.5,
+		update_priority=3,
+		render_layer=6,
 		width=12,
 		height=22,
 		draw=function(self)
@@ -890,8 +861,8 @@ local entity_classes={
 		end
 	},
 	ball_icon={
-		update_priority=2,
-		render_layer=12,
+		update_priority=5,
+		render_layer=11,
 		width=5,
 		height=5,
 		color=7,
@@ -902,8 +873,8 @@ local entity_classes={
 		end
 	},
 	ball_spawner={
-		update_priority=4,
-		render_layer=3,
+		update_priority=7,
+		render_layer=8,
 		width=5,
 		height=4,
 		held_ball=nil,
@@ -975,7 +946,7 @@ local entity_classes={
 		end
 	},
 	score_track={
-		update_priority=3,
+		update_priority=6,
 		render_layer=10,
 		y=ground_y+6,
 		width=39,
@@ -1009,8 +980,8 @@ local entity_classes={
 		end
 	},
 	camera_operator={
-		update_priority=10,
-		render_layer=15,
+		update_priority=13,
+		render_layer=14,
 		y=-127,
 		vy=0,
 		update=function(self)
@@ -1044,8 +1015,8 @@ local entity_classes={
 		end
 	},
 	title_screen={
-		update_priority=9,
-		render_layer=14,
+		update_priority=12,
+		render_layer=13,
 		x=64,
 		y=-64,
 		frames_to_ball_spawn=1,
@@ -1152,8 +1123,8 @@ local entity_classes={
 		end
 	},
 	mode_select={
-		update_priority=8,
-		render_layer=13,
+		update_priority=11,
+		render_layer=12,
 		x=16,
 		y=-29,
 		width=95,
@@ -1252,8 +1223,8 @@ local entity_classes={
 		end
 	},
 	controls={
-		update_priority=0,
-		render_layer=0,
+		update_priority=14,
+		render_layer=3,
 		frames_to_death=260,
 		draw=function(self)
 			local n=mid(0,flr(self.frames_alive/2)-80,100)
@@ -1283,8 +1254,8 @@ local entity_classes={
 		end
 	},
 	game_over_text_geysers={
-		update_priority=7,
-		render_layer=1,
+		update_priority=10,
+		render_layer=5,
 		on_scene_change=function(self)
 			if scene=="title" then
 				self:die()
@@ -1334,8 +1305,8 @@ local entity_classes={
 		end
 	},
 	stopwatch={
-		update_priority=0,
-		render_layer=-2,
+		update_priority=2,
+		render_layer=1,
 		x=56,
 		y=14,
 		width=14,
@@ -1368,8 +1339,8 @@ local entity_classes={
 		end
 	},
 	speedometer={
-		update_priority=0,
-		render_layer=16,
+		update_priority=15,
+		render_layer=15,
 		x=49,
 		y=ground_y+7,
 		width=31,
@@ -1415,8 +1386,8 @@ local entity_classes={
 		end
 	},
 	mode_notification={
-		update_priority=0.75,
-		render_layer=-1,
+		update_priority=4,
+		render_layer=4,
 		x=27,
 		y=19,
 		width=72,
@@ -2181,20 +2152,27 @@ __sfx__
 010700000000000000000000000000000000000000000000247202472124721247112471124711000000000026730267212672126721267212671126711000002874028731287312873128731287212872128711
 011c00000c7100c7100c7100c7001371013710137101370007710077100771007700137101371013710137000c7100c7100c7100c700137101371013710137000771007710077100770013710137101371013700
 011c00000c7100c7100c710000001571015710157100000005710057100571000000157101571015710000000c7100c7100c71000000157101571015710000000571005710057100000015710157101571000000
-010400000e5150c500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000000
-010400000c5150c500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010400000e5350c500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000000
+010400000c5350c500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 010700000621006210062200622006230062300624006240062400624006240062400624006245062450625500000062300624006240062400624006240062450625500000062300625500000062500000000000
 011400000c1453c100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100
+010700200c5200c5200c5200c5201354313520135201352007520075200752007520135431352013520135200c5240c5200c5200c520135431352013543135100754307520075200752013543135201352013520
+010e00001c6250000000000000000c2300822104221042111c625000001c625000000421004221082210c2311c6250000000000000000c2300822104221042111c625000000c2301c6250c230082210422104211
+010e00001c6251c6251c625000001c6250000000000000000c230082311c625000001c625000001c625000000c230082311c6250000005230012311c6250000002230002311c6251c62504230002311c62500000
+010700200c5200c5200c5200c5201554315520155201552005520055200552005520155431552015520155200c5200c5200c5200c520155431552315523155230552005520055200552015543155201552015520
+010e00001c6250000000000000001c6230000000000000001c625000001c625000001c625000001c625000001c6251c6251c6251c6251c6251c6251c6251c62510625106251c6251c62528625286353463534635
 __music__
 04 0f424344
 04 10424344
 01 11424344
 04 12424344
 00 22424344
-01 181b1d44
+01 181b5d44
 00 191c1e1f
 00 181b1d20
-02 1a1c1e21
-01 23424344
-02 24424344
+00 1a1c1e21
+00 18296b2a
+00 192c5e2b
+00 18291d6d
+02 1a2c5e2d
 
