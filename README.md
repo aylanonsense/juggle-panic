@@ -1,2 +1,2 @@
 # juggle-panic
-A two-player juggle fiesta!
+A two-player juggling extravaganza!
