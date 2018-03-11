@@ -4,8 +4,6 @@ __lua__
  
 --[[
 todos:
-	blackout mode sound effect
-	ball wallbounce sound effect
 	final dest mode
 	duck hunt mode?
 	more modes
@@ -78,12 +76,14 @@ sound efffects:
 	23:	pong bounce
 	37:	footsteps 1
 	38:	footsteps 2
+	39:	blackout static
+	40:	wall bounce
 
 sound channels:
 	0:	footsteps
-	1:	notification appear, notification disappear, drop
+	1:	notification appear, notification disappear, drop, wall bounce
 	2:	pick up, catch, explosion, pong bounce
-	3:	rise, fall, mid-air collision
+	3:	rise, fall, mid-air collision, blackout static
 
 music:
 	0:	--
@@ -164,7 +164,6 @@ local credits_messages={
 
 local buttons
 local button_presses
-local button_releases
 local buffered_button_presses
 
 local scene
@@ -418,7 +417,7 @@ local entity_classes={
 					self.sprite_flipped=not self.sprite_flipped
 					self.wiggle_frames=0
 					if self.move_x!=0 then
-						sfx(ternary(self.player_num==1,38,37),0)--ternary(move_speed>2 and self.move_x!=0,37,38),0) -- footsteps
+						sfx(ternary(self.player_num==1,38,37),0)
 					end
 				end
 			end
@@ -671,8 +670,12 @@ local entity_classes={
 							end
 						end
 					end
-					if mode=="pong mode" and self.bounce_dir then
-						sfx(23,2) -- pong bounce
+					if self.bounce_dir then
+						if mode=="pong mode" then
+							sfx(23,2) -- pong bounce
+						else
+							sfx(40,1) -- wall bounce
+						end
 					end
 					-- bounce off the ground
 					-- if self.y>ground_y-self.height then
@@ -1066,7 +1069,7 @@ local entity_classes={
 			end
 			if scene=="title" and any_button_press then
 				music()
-				sfx(15) -- title->game
+				sfx(15,1) -- title->game
 				change_scene("title->game")
 			end
 			-- spawn a ball every now and then
@@ -1320,7 +1323,7 @@ local entity_classes={
 				end
 			end
 			if f==140 then
-				sfx(16) -- game->title
+				sfx(16,1) -- game->title
 				change_scene("game->title")
 			end
 		end,
@@ -1482,7 +1485,6 @@ function _init()
 	-- initialize input vars
 	buttons={}
 	button_presses={}
-	button_releases={}
 	buffered_button_presses={}
 	-- initialize game vars
 	game_frame=0
@@ -1516,13 +1518,11 @@ function _update()
 		if not buttons[p] then
 			buttons[p]={}
 			button_presses[p]={}
-			button_releases[p]={}
 			buffered_button_presses[p]={}
 		end
 		local b
 		for b=0,5 do
 			button_presses[p][b]=btn(b,p) and not buttons[p][b]
-			button_releases[p][b]=not btn(b,p) and buttons[p][b]
 			buttons[p][b]=btn(b,p)
 			if button_presses[p][b] then
 				buffered_button_presses[p][b]=4
@@ -1776,7 +1776,7 @@ function change_scene(s)
 	end
 	-- and then do stuff based on the scene
 	if scene=="title" then
-		music(4)
+		music(4) -- title music
 	elseif scene=="title->game" then
 		next_ball_id=1
 		game_frame=0
@@ -1850,6 +1850,10 @@ function change_scene(s)
 			spawn_entity("stopwatch")
 		elseif mode!="speedball mode" and mode!="pong mode" then
 			spawn_entity("speedometer")
+		end
+	elseif scene=="game-start" then
+		if mode=="blackout mode" then
+			sfx(39,3) -- blackout static
 		end
 	elseif scene=="game" then
 		standstill_frames=220
@@ -1964,16 +1968,6 @@ function decrement_counter_prop(obj,k)
 		return obj[k]<=0
 	end
 end
-
--- filter out anything in list for which func is false
--- function filter(list,func)
--- 	local item
--- 	for item in all(list) do
--- 		if not func(item) then
--- 			del(list,item)
--- 		end
--- 	end
--- end
 
 -- bubble sorts a list according to a comparison func
 function sort(list,func)
@@ -2189,6 +2183,8 @@ __sfx__
 011c00000c7100c7100c710000001571015710157100000005710057100571000000157101571015710000000c7100c7100c71000000157101571015710000000571005710057100000015710157101571000000
 010400000e5150c500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000500005000050000000
 010400000c5150c500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+010700000621006210062200622006230062300624006240062400624006240062400624006245062450625500000062300624006240062400624006240062450625500000062300625500000062500000000000
+011400000c1453c100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100001000010000100
 __music__
 04 0f424344
 04 10424344
